@@ -126,16 +126,18 @@ class LocallyConnected2dV2(nn.Module):
         self.in_width = in_width
         self.num_kernels_w = (
             math.floor((in_width - kernel_width + 2 * self.padding_w) / stride_w) + 1
-        )
+        )  # number of kernels that fit in the width of input
         self.num_kernels_h = (
             math.floor((in_height - kernel_height + 2 * self.padding_h) / stride_h) + 1
-        )
+        )  # number of kernels that fit in the height of input
+        print("*******", self.num_kernels_h, self.num_kernels_w)
         self.num_kernels = self.num_kernels_w * self.num_kernels_h
 
         kernel_weights = [
             nn.Parameter(torch.randn(kernel_height, kernel_width))
             for _ in range(self.num_kernels)
-        ]
+        ]  # initialise the individual kernel weights
+
         self.W = self._create_weight_matrix(kernel_weights)
 
         if bias:
@@ -146,16 +148,28 @@ class LocallyConnected2dV2(nn.Module):
             self.register_parameter("bias", None)
 
     def _create_weight_matrix(self, weights):
+        """
+        Creates a sparse matrix which when muptiplied by the input
+        gives the required untied weights for each receptive field.
+        Number or rows corresponds to the number of input pixels and
+        number of columns is the number total number of kernels that
+        will fit in the padded input image when considering the stride.
+        """
+
         init_w = torch.zeros(
             (self.in_height + 2 * self.padding_h)
             * (self.in_width + 2 * self.padding_w),
             self.num_kernels,
         )
         for i, weight in enumerate(weights):
+            # find the top left corner index of the ith kernel
             start_i = (i // self.num_kernels_w) * self.stride_h
             start_j = (i % self.num_kernels_w) * self.stride_w
             for k in range(self.kernel_height):
-                begin = (self.in_width + 2 * self.padding_w) * start_i + start_j
+                # add each row of kernel weights to the sparse weight matrix
+                begin = (
+                    self.in_width + 2 * self.padding_w
+                ) * start_i + start_j  # start index of flattened input for each kernel row
                 init_w[begin : begin + self.kernel_width, i] = weight[k, :]
                 start_i += 1
 
@@ -201,17 +215,17 @@ class LocallyConnected2dV2(nn.Module):
 # print(two-one, three-two)
 
 
-x = torch.rand(3, 4)
+x = torch.rand(450, 450)
 
 lc2d2 = LocallyConnected2dV2(
-    in_height=3,
-    in_width=4,
-    kernel_height=2,
-    kernel_width=2,
-    stride_h=3,
-    stride_w=3,
-    padding_h=1,
-    padding_w=2,
+    in_height=450,
+    in_width=450,
+    kernel_height=7,
+    kernel_width=7,
+    stride_h=1,
+    stride_w=1,
+    padding_h=0,
+    padding_w=0,
 )
 
 lc2d2(x)
