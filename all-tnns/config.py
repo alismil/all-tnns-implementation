@@ -3,10 +3,10 @@ from dataclasses import dataclass
 
 @dataclass
 class LayerInputParams:
-    in_height: int
-    in_width: int
     kernel_height: int
     kernel_width: int
+    in_height: int = None
+    in_width: int = None
     stride_h: int = 1
     stride_w: int = 1
     padding_h: int = 0
@@ -17,22 +17,22 @@ class LayerInputParams:
 @dataclass
 class ModelConfig:
     layer1: LayerInputParams = LayerInputParams(
-        in_height=384, in_width=384, kernel_height=7, kernel_width=7
+        in_height=150, in_width=150, kernel_height=5, kernel_width=5
     )
     layer2: LayerInputParams = LayerInputParams(
-        in_height=198, in_width=198, kernel_height=24, kernel_width=24
+        kernel_height=7, kernel_width=7
     )
     layer3: LayerInputParams = LayerInputParams(
-        in_height=180, in_width=180, kernel_height=27, kernel_width=27
+        kernel_height=10, kernel_width=10
     )
     layer4: LayerInputParams = LayerInputParams(
-        in_height=128, in_width=128, kernel_height=27, kernel_width=27
+        kernel_height=13, kernel_width=13
     )
     layer5: LayerInputParams = LayerInputParams(
-        in_height=96, in_width=96, kernel_height=48, kernel_width=48
+       kernel_height=15, kernel_width=15
     )
     layer6: LayerInputParams = LayerInputParams(
-        in_height=50, in_width=50, kernel_height=48, kernel_width=48
+       kernel_height=1, kernel_width=1
     )
     batch_size: int = 256
     fc1_hidden_dim: int = 565
