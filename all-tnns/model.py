@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from tqdm import tqdm
+from config import LayerInputParams, ModelConfig
 
 """
 6 layers, of which layers 1, 3, and 5 are followed by 2 by 2 pooling layers. 
@@ -11,98 +12,105 @@ Weights are initialised with Xavier initialisation.
 A dropout of 0.2 is applied to all layers during training.
 """
 
-# class AllTnn(nn.Module):
-#     @staticmethod
-#     def calc_activation_shape(
-#         dim, ksize, dilation=(1, 1), stride=(1, 1), padding=(0, 0)
-#     ):
-#         def shape_each_dim(i):
-#             odim_i = dim[i] + 2 * padding[i] - dilation[i] * (ksize[i] - 1) - 1
-#             return (odim_i / stride[i]) + 1
 
-#         return shape_each_dim(0), shape_each_dim(1)
+class AllTnn(nn.Module):
+    @staticmethod
+    def calc_activation_shape(params: LayerInputParams):
+        num_kernels_w = (
+            math.floor(
+                (params.in_width - params.kernel_width + 2 * params.padding_w)
+                / params.stride_w
+            )
+            + 1
+        )  # number of kernels that fit in the width of input
+        num_kernels_h = (
+            math.floor(
+                (params.in_height - params.kernel_height + 2 * params.padding_h)
+                / params.stride_h
+            )
+            + 1
+        )  # number of kernels that fit in the height of input
 
-#     def __init__(self, idim):
-#         super().__init__()
-#         self.conv1 = LocallyConnected2d(3, 384, 7)
-#         ln_shape = AllTnn.calc_activation_shape(idim, 7)
-#         self.norm1 = torch.nn.LayerNorm([1, *ln_shape])
+        return num_kernels_w, num_kernels_h
 
-#         self.conv2 = LocallyConnected2d(1, 198, 24)
-#         ln_shape = AllTnn.calc_activation_shape(ln_shape, 24)
-#         self.norm2 = torch.nn.LayerNorm([1, *ln_shape])
+    def __init__(self, config: ModelConfig):
+        super().__init__()
+        self.conv1 = LocallyConnected2dV1(config.layer1)
+        out_shape = AllTnn.calc_activation_shape(config.layer1)
+        self.norm1 = torch.nn.LayerNorm([*out_shape])
 
-#         self.conv3 = LocallyConnected2d(1, 180, 27)
-#         ln_shape = AllTnn.calc_activation_shape(ln_shape, 27)
-#         self.norm3 = torch.nn.LayerNorm([1, *ln_shape])
+        self.conv2 = LocallyConnected2dV1(config.layer2)
+        out_shape = AllTnn.calc_activation_shape(config.layer2)
+        self.norm2 = torch.nn.LayerNorm([*out_shape])
 
-#         self.conv4 = LocallyConnected2d(1, 128, 27)
-#         ln_shape = AllTnn.calc_activation_shape(ln_shape, 27)
-#         self.norm4 = torch.nn.LayerNorm([1, *ln_shape])
+        self.conv3 = LocallyConnected2dV1(config.layer3)
+        out_shape = AllTnn.calc_activation_shape(config.layer3)
+        self.norm3 = torch.nn.LayerNorm([*out_shape])
 
-#         self.conv5 = LocallyConnected2d(1, 96, 48)
-#         ln_shape = AllTnn.calc_activation_shape(ln_shape, 48)
-#         self.norm5 = torch.nn.LayerNorm([1, *ln_shape])
+        self.conv4 = LocallyConnected2dV1(config.layer4)
+        out_shape = AllTnn.calc_activation_shape(config.layer4)
+        self.norm4 = torch.nn.LayerNorm([*out_shape])
 
-#         self.conv6 = LocallyConnected2d(1, 50, 48)
-#         ln_shape = AllTnn.calc_activation_shape(ln_shape, 48)
-#         self.norm6 = torch.nn.LayerNorm([1, *ln_shape])
+        self.conv5 = LocallyConnected2dV1(config.layer5)
+        out_shape = AllTnn.calc_activation_shape(config.layer5)
+        self.norm5 = torch.nn.LayerNorm([*out_shape])
 
-#         self.pool = nn.MaxPool2d(2, 2)
-#         self.dropout = nn.Dropout2d(p=0.2)
-#         self.fc1 = nn.Linear(48**2*(50-47)**2, 565)
+        self.conv6 = LocallyConnected2dV1(config.layer6)
+        out_shape = AllTnn.calc_activation_shape(config.layer6)
+        self.norm6 = torch.nn.LayerNorm([*out_shape])
 
-#     def forward(self, x):
-#         x = self.dropout(self.pool(self.norm1(F.relu(self.conv1(x)))))
-#         x = self.dropout(self.norm2(F.relu(self.conv2(x))))
-#         x = self.dropout(self.pool(self.norm3(F.relu(self.conv3(x)))))
-#         x = self.dropout(self.norm4(F.relu(self.conv4(x))))
-#         x = self.dropout(self.pool(self.norm5(F.relu(self.conv5(x)))))
-#         x = self.dropout(self.norm6(F.relu(self.conv6(x))))
+        # TODO: MaxPool2d expects a channel dimension, need to add this to the LocallyConnected2dV1 output
+        self.pool = nn.MaxPool2d(config.max_pool_kernel_dim, config.max_pool_stride)
+        self.dropout = nn.Dropout2d(p=config.dropout_p)
+        self.fc1 = nn.Linear(out_shape[0] * out_shape[1], config.fc1_hidden_dim)
 
-#         x = torch.flatten(x, 1) # flatten all dimensions except batch
-#         x = self.fc1(x)
-#         return nn.Softmax(x)
+    def forward(self, x):
+        x = self.dropout(self.pool(self.norm1(F.relu(self.conv1(x)))))
+        x = self.dropout(self.norm2(F.relu(self.conv2(x))))
+        x = self.dropout(self.pool(self.norm3(F.relu(self.conv3(x)))))
+        x = self.dropout(self.norm4(F.relu(self.conv4(x))))
+        x = self.dropout(self.pool(self.norm5(F.relu(self.conv5(x)))))
+        x = self.dropout(self.norm6(F.relu(self.conv6(x))))
+
+        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = self.fc1(x)
+        return nn.Softmax(x)
 
 
 class LocallyConnected2dV1(nn.Module):
-    def __init__(
-        self,
-        in_height,
-        in_width,
-        kernel_height,
-        kernel_width,
-        stride_h=1,
-        stride_w=1,
-        padding_h=0,
-        padding_w=0,
-        bias=False,
-    ):
+    def __init__(self, params: LayerInputParams):
         super(LocallyConnected2dV1, self).__init__()
-        assert kernel_height <= in_height + 2 * padding_h
-        assert kernel_width <= in_width + 2 * padding_w
+        assert params.kernel_height <= params.in_height + 2 * params.padding_h
+        assert params.kernel_width <= params.in_width + 2 * params.padding_w
 
-        self.in_height = in_height
-        self.in_width = in_width
-        self.stride_w = stride_w
-        self.stride_h = stride_h
-        self.padding_h = padding_h
-        self.padding_w = padding_w
-        self.kernel_width = kernel_width
-        self.kernel_height = kernel_height
+        self.in_height = params.in_height
+        self.in_width = params.in_width
+        self.stride_w = params.stride_w
+        self.stride_h = params.stride_h
+        self.padding_h = params.padding_h
+        self.padding_w = params.padding_w
+        self.kernel_width = params.kernel_width
+        self.kernel_height = params.kernel_height
         self.num_kernels_w = (
-            math.floor((in_width - kernel_width + 2 * self.padding_w) / stride_w) + 1
+            math.floor(
+                (self.in_width - self.kernel_width + 2 * self.padding_w) / self.stride_w
+            )
+            + 1
         )  # number of kernels that fit in the width of input
         self.num_kernels_h = (
-            math.floor((in_height - kernel_height + 2 * self.padding_h) / stride_h) + 1
+            math.floor(
+                (self.in_height - self.kernel_height + 2 * self.padding_h)
+                / self.stride_h
+            )
+            + 1
         )  # number of kernels that fit in the height of input
         num_kernels = self.num_kernels_w * self.num_kernels_h
         self.weights = [
-            nn.Parameter(torch.randn(kernel_height, kernel_width))
+            nn.Parameter(torch.randn(self.kernel_height, self.kernel_width))
             for _ in range(num_kernels)
         ]  # initialise the individual kernel weights
 
-        if bias:
+        if params.bias:
             self.bias = nn.Parameter(
                 torch.randn(self.num_kernels_h, self.num_kernels_w)
             )
@@ -138,45 +146,41 @@ class LocallyConnected2dV1(nn.Module):
 
 
 class LocallyConnected2dV2(nn.Module):
-    def __init__(
-        self,
-        in_height,
-        in_width,
-        kernel_height,
-        kernel_width,
-        stride_h=1,
-        stride_w=1,
-        padding_h=0,
-        padding_w=0,
-        bias=False,
-    ):
+    def __init__(self, params: LayerInputParams):
         super(LocallyConnected2dV2, self).__init__()
-        assert kernel_height <= in_height + 2 * padding_h
-        assert kernel_width <= in_width + 2 * padding_w
+        assert params.kernel_height <= params.in_height + 2 * params.padding_h
+        assert params.kernel_width <= params.in_width + 2 * params.padding_w
 
-        self.in_height = in_height
-        self.in_width = in_width
-        self.stride_w = stride_w
-        self.stride_h = stride_h
-        self.padding_h = padding_h
-        self.padding_w = padding_w
-        self.kernel_width = kernel_width
-        self.kernel_height = kernel_height
+        self.in_height = params.in_height
+        self.in_width = params.in_width
+        self.stride_w = params.stride_w
+        self.stride_h = params.stride_h
+        self.padding_h = params.padding_h
+        self.padding_w = params.padding_w
+        self.kernel_width = params.kernel_width
+        self.kernel_height = params.kernel_height
         self.num_kernels_w = (
-            math.floor((in_width - kernel_width + 2 * self.padding_w) / stride_w) + 1
+            math.floor(
+                (self.in_width - self.kernel_width + 2 * self.padding_w) / self.stride_w
+            )
+            + 1
         )  # number of kernels that fit in the width of input
         self.num_kernels_h = (
-            math.floor((in_height - kernel_height + 2 * self.padding_h) / stride_h) + 1
+            math.floor(
+                (self.in_height - self.kernel_height + 2 * self.padding_h)
+                / self.stride_h
+            )
+            + 1
         )  # number of kernels that fit in the height of input
         self.num_kernels = self.num_kernels_w * self.num_kernels_h
 
         kernel_weights = [
-            nn.Parameter(torch.randn(kernel_height, kernel_width))
+            nn.Parameter(torch.randn(self.kernel_height, self.kernel_width))
             for _ in range(self.num_kernels)
         ]  # initialise the individual kernel weights
         self.W = self._create_weight_matrix(kernel_weights)
 
-        if bias:
+        if params.bias:
             self.bias = nn.Parameter(
                 torch.randn(self.num_kernels_h, self.num_kernels_w)
             )
@@ -231,39 +235,3 @@ class LocallyConnected2dV2(nn.Module):
             out += self.bias
 
         return out
-
-
-# import time
-# x = torch.rand(3,4)
-
-# lc2d1 = LocallyConnected2dV1(in_height=3, in_width=4, kernel_height=2, kernel_width=2)
-# lc2d2 = LocallyConnected2dV2(in_height=3, in_width=4, kernel_height=2, kernel_width=2)
-
-# one = time.time()
-
-# lc2d1(x)
-
-# two = time.time()
-
-# lc2d2(x)
-
-# three = time.time()
-
-# print(two-one, three-two)
-
-b, h, w = 3, 4, 4
-x = torch.rand(b, h, w)
-
-lc2d2 = LocallyConnected2dV2(
-    in_height=h,
-    in_width=w,
-    kernel_height=3,
-    kernel_width=3,
-    stride_h=2,
-    stride_w=2,
-    padding_h=2,
-    padding_w=2,
-    bias=True,
-)
-
-print(lc2d2(x))
