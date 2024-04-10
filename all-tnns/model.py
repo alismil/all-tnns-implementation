@@ -35,28 +35,40 @@ class AllTnn(nn.Module):
 
     def __init__(self, config: ModelConfig):
         super().__init__()
-        self.conv1 = LocallyConnected2dV1(config.layer1)
         out_shape = AllTnn.calc_activation_shape(config.layer1)
+        self.conv1 = LocallyConnected2dV1(
+            params=config.layer1, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
+        )
         self.norm1 = torch.nn.LayerNorm([*out_shape])
 
-        self.conv2 = LocallyConnected2dV1(config.layer2)
         out_shape = AllTnn.calc_activation_shape(config.layer2)
+        self.conv2 = LocallyConnected2dV1(
+            params=config.layer2, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
+        )
         self.norm2 = torch.nn.LayerNorm([*out_shape])
 
-        self.conv3 = LocallyConnected2dV1(config.layer3)
         out_shape = AllTnn.calc_activation_shape(config.layer3)
+        self.conv3 = LocallyConnected2dV1(
+            config.layer3, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
+        )
         self.norm3 = torch.nn.LayerNorm([*out_shape])
 
-        self.conv4 = LocallyConnected2dV1(config.layer4)
         out_shape = AllTnn.calc_activation_shape(config.layer4)
+        self.conv4 = LocallyConnected2dV1(
+            config.layer4, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
+        )
         self.norm4 = torch.nn.LayerNorm([*out_shape])
 
-        self.conv5 = LocallyConnected2dV1(config.layer5)
         out_shape = AllTnn.calc_activation_shape(config.layer5)
+        self.conv5 = LocallyConnected2dV1(
+            config.layer5, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
+        )
         self.norm5 = torch.nn.LayerNorm([*out_shape])
 
-        self.conv6 = LocallyConnected2dV1(config.layer6)
         out_shape = AllTnn.calc_activation_shape(config.layer6)
+        self.conv6 = LocallyConnected2dV1(
+            config.layer6, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
+        )
         self.norm6 = torch.nn.LayerNorm([*out_shape])
 
         # TODO: MaxPool2d expects a channel dimension, need to add this to the LocallyConnected2dV1 output
@@ -78,7 +90,7 @@ class AllTnn(nn.Module):
 
 
 class LocallyConnected2dV1(nn.Module):
-    def __init__(self, params: LayerInputParams):
+    def __init__(self, params: LayerInputParams, num_kernels_w, num_kernels_h):
         super(LocallyConnected2dV1, self).__init__()
         assert params.kernel_height <= params.in_height + 2 * params.padding_h
         assert params.kernel_width <= params.in_width + 2 * params.padding_w
@@ -91,19 +103,8 @@ class LocallyConnected2dV1(nn.Module):
         self.padding_w = params.padding_w
         self.kernel_width = params.kernel_width
         self.kernel_height = params.kernel_height
-        self.num_kernels_w = (
-            math.floor(
-                (self.in_width - self.kernel_width + 2 * self.padding_w) / self.stride_w
-            )
-            + 1
-        )  # number of kernels that fit in the width of input
-        self.num_kernels_h = (
-            math.floor(
-                (self.in_height - self.kernel_height + 2 * self.padding_h)
-                / self.stride_h
-            )
-            + 1
-        )  # number of kernels that fit in the height of input
+        self.num_kernels_w = num_kernels_w
+        self.num_kernels_h = num_kernels_h
         num_kernels = self.num_kernels_w * self.num_kernels_h
         self.weights = [
             nn.Parameter(torch.randn(self.kernel_height, self.kernel_width))
@@ -146,7 +147,7 @@ class LocallyConnected2dV1(nn.Module):
 
 
 class LocallyConnected2dV2(nn.Module):
-    def __init__(self, params: LayerInputParams):
+    def __init__(self, params: LayerInputParams, num_kernels_w, num_kernels_h):
         super(LocallyConnected2dV2, self).__init__()
         assert params.kernel_height <= params.in_height + 2 * params.padding_h
         assert params.kernel_width <= params.in_width + 2 * params.padding_w
@@ -159,19 +160,8 @@ class LocallyConnected2dV2(nn.Module):
         self.padding_w = params.padding_w
         self.kernel_width = params.kernel_width
         self.kernel_height = params.kernel_height
-        self.num_kernels_w = (
-            math.floor(
-                (self.in_width - self.kernel_width + 2 * self.padding_w) / self.stride_w
-            )
-            + 1
-        )  # number of kernels that fit in the width of input
-        self.num_kernels_h = (
-            math.floor(
-                (self.in_height - self.kernel_height + 2 * self.padding_h)
-                / self.stride_h
-            )
-            + 1
-        )  # number of kernels that fit in the height of input
+        self.num_kernels_w = num_kernels_w
+        self.num_kernels_h = num_kernels_h
         self.num_kernels = self.num_kernels_w * self.num_kernels_h
 
         kernel_weights = [
