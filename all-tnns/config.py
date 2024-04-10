@@ -1,6 +1,7 @@
-from pydantic import BaseModel
+from dataclasses import dataclass
 
 
+@dataclass
 class LayerInputParams:
     in_height: int
     in_width: int
@@ -13,7 +14,8 @@ class LayerInputParams:
     bias: bool = True
 
 
-class ModelConfig(BaseModel):
+@dataclass
+class ModelConfig:
     layer1: LayerInputParams = LayerInputParams(
         in_height=384, in_width=384, kernel_height=7, kernel_width=7
     )
