@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import math
 from tqdm import tqdm
 from config import LayerInputParams, ModelConfig
+from torch.nn.modules.utils import _pair
 
 """
 6 layers, of which layers 1, 3, and 5 are followed by 2 by 2 pooling layers. 
@@ -18,115 +19,105 @@ class AllTnn(nn.Module):
     def calc_activation_shape(params: LayerInputParams):
         num_kernels_w = (
             math.floor(
-                (params.in_width - params.kernel_width + 2 * params.padding_w)
-                / params.stride_w
-            )
-            + 1
+                (params.in_dims[1] - params.kernel_dims[1] + 2 * params.padding[1])
+                / params.stride[1]
+            ) + 1
         )  # number of kernels that fit in the width of input
         num_kernels_h = (
             math.floor(
-                (params.in_height - params.kernel_height + 2 * params.padding_h)
-                / params.stride_h
-            )
-            + 1
+                (params.in_dims[0] - params.kernel_dims[0] + 2 * params.padding[0])
+                / params.stride[0]
+            ) + 1
         )  # number of kernels that fit in the height of input
 
-        return num_kernels_w, num_kernels_h
+        return num_kernels_h, num_kernels_w
 
     def __init__(self, config: ModelConfig):
         super().__init__()
-        out_shape = AllTnn.calc_activation_shape(config.layer1)
-        self.conv1 = LocallyConnected2dV1(
-            params=config.layer1, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
-        )
-        self.norm1 = torch.nn.LayerNorm([*out_shape])
-        
-        config.layer2.in_width = out_shape[0] // 2 # we will be applying 2x2 pooling
-        config.layer2.in_height = out_shape[1] // 2
-        out_shape = AllTnn.calc_activation_shape(config.layer2)
-        self.conv2 = LocallyConnected2dV1(
-            params=config.layer2, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
-        )
-        self.norm2 = torch.nn.LayerNorm([*out_shape])
 
-        config.layer3.in_width = out_shape[0]
-        config.layer3.in_height = out_shape[1]
-        out_shape = AllTnn.calc_activation_shape(config.layer3)
-        self.conv3 = LocallyConnected2dV1(
-            config.layer3, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
-        )
-        self.norm3 = torch.nn.LayerNorm([*out_shape])
+        self.convs = []
+        self.norms = []
+        self.num_layers = len(config.layers)
 
-        config.layer4.in_width = out_shape[0] // 2
-        config.layer4.in_height = out_shape[1] // 2
-        out_shape = AllTnn.calc_activation_shape(config.layer4)
-        self.conv4 = LocallyConnected2dV1(
-            config.layer4, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
-        )
-        self.norm4 = torch.nn.LayerNorm([*out_shape])
-
-        config.layer5.in_width = out_shape[0]
-        config.layer5.in_height = out_shape[1]
-        out_shape = AllTnn.calc_activation_shape(config.layer5)
-        self.conv5 = LocallyConnected2dV1(
-            config.layer5, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
-        )
-        self.norm5 = torch.nn.LayerNorm([*out_shape])
-
-        config.layer6.in_width = out_shape[0] // 2
-        config.layer6.in_height = out_shape[1] // 2
-        out_shape = AllTnn.calc_activation_shape(config.layer6)
-        self.conv6 = LocallyConnected2dV1(
-            config.layer6, num_kernels_w=out_shape[0], num_kernels_h=out_shape[1]
-        )
-        self.norm6 = torch.nn.LayerNorm([*out_shape])
+        for i in range(self.num_layers):
+            out_shape = AllTnn.calc_activation_shape(config.layers[i])
+            config.layers[i].num_kernels_out=out_shape
+            self.convs.append(LocallyConnected2dV1(config.layers[i]))
+            self.norms.append(torch.nn.LayerNorm([*out_shape]))
+            # we will be applying 2x2 pooling to every other layer
+            div = 2 if i % 2 == 0 else 1
+            config.layers[i+1].in_dims = (out_shape[0] // div, out_shape[0] // div) 
 
         self.pool = nn.MaxPool2d(config.max_pool_kernel_dim, config.max_pool_stride)
         self.dropout = nn.Dropout2d(p=config.dropout_p)
         self.fc1 = nn.Linear(out_shape[0] * out_shape[1], config.fc1_hidden_dim)
         self.softmax = nn.Softmax(dim=1)
 
-    def forward(self, x):
-        x = self.norm1(F.relu(self.conv1(x))).unsqueeze(1)
-        x = self.dropout(self.pool(x)).squeeze(1)
-        x = self.dropout(self.norm2(F.relu(self.conv2(x))).unsqueeze(1)).squeeze(1)
-        x = self.norm3(F.relu(self.conv3(x))).unsqueeze(1)
-        x = self.dropout(self.pool(x)).squeeze(1)
-        x = self.dropout(self.norm4(F.relu(self.conv4(x))).unsqueeze(1)).squeeze(1)
-        x = self.norm5(F.relu(self.conv5(x))).unsqueeze(1)
-        x = self.dropout(self.pool(x)).squeeze(1)
-        x = self.dropout(self.norm6(F.relu(self.conv6(x))).unsqueeze(1)).squeeze(1)
+    def forward(self, x: torch.Tensor):
+        for i in range(self.num_layers):
+            x = self.norms[i](F.relu(self.convs[i](x)))
+            if i % 2 == 0:
+                x = self.pool(x)
+            x = self.dropout(x)
 
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = torch.flatten(x, 1)
         x = self.fc1(x)
+
         return self.softmax(x)
+    
+
+class LocallyConnected2d(nn.Module):
+    # TODO: add padding, Xavier init, dim checking, and update args to LayerInputParams
+    def __init__(self, in_channels, out_channels, output_size, kernel_size, stride, bias=False):
+        super(LocallyConnected2d, self).__init__()
+        output_size = _pair(output_size)
+        self.weight = nn.Parameter(
+            torch.randn(1, out_channels, in_channels, output_size[0], output_size[1], kernel_size**2)
+        )
+        if bias:
+            self.bias = nn.Parameter(
+                torch.randn(1, out_channels, output_size[0], output_size[1])
+            )
+        else:
+            self.register_parameter('bias', None)
+        self.kernel_size = _pair(kernel_size)
+        self.stride = _pair(stride)
+        
+    def forward(self, x: torch.Tensor):
+        _, c, h, w = x.size()
+        kh, kw = self.kernel_size
+        dh, dw = self.stride
+        x = x.unfold(2, kh, dh).unfold(3, kw, dw)
+        x = x.contiguous().view(*x.size()[:-2], -1)
+        # Sum in in_channel and kernel_size dims
+        out = (x.unsqueeze(1) * self.weight).sum([2, -1])
+        if self.bias is not None:
+            out += self.bias
+        return out
 
 
 class LocallyConnected2dV1(nn.Module):
-    def __init__(self, params: LayerInputParams, num_kernels_w, num_kernels_h):
+    def __init__(self, params: LayerInputParams):
         super(LocallyConnected2dV1, self).__init__()
-        assert params.kernel_height <= params.in_height + 2 * params.padding_h, f"kernel_height {params.kernel_height} is greater than max {params.in_height + 2 * params.padding_h}"
-        assert params.kernel_width <= params.in_width + 2 * params.padding_w, f"kernel_width {params.kernel_width} is greater than max {params.in_width + 2 * params.padding_h}"
+        assert params.kernel_dims[0] <= params.in_dims[0] + 2 * params.padding[0], f"kernel_height {params.kernel_dims[0]} is greater than max {params.in_dims[0] + 2 * params.padding[0]}"
+        assert params.kernel_dims[1] <= params.in_dims[1] + 2 * params.padding[1], f"kernel_width {params.kernel_dims[1]} is greater than max {params.in_dims[1] + 2 * params.padding[1]}"
 
-        self.in_height = params.in_height
-        self.in_width = params.in_width
-        self.stride_w = params.stride_w
-        self.stride_h = params.stride_h
-        self.padding_h = params.padding_h
-        self.padding_w = params.padding_w
-        self.kernel_width = params.kernel_width
-        self.kernel_height = params.kernel_height
-        self.num_kernels_w = num_kernels_w
-        self.num_kernels_h = num_kernels_h
+        self.in_height, self.in_width = params.in_dims
+        self.stride_h, self.stride_w = params.stride
+        self.padding_h, self.padding_w = params.padding
+        self.kernel_height, self.kernel_width = params.kernel_dims
+        self.in_channels = params.in_channels
+        self.out_channels = params.out_channels
+        self.num_kernels_h, self.num_kernels_w = params.num_kernels_out
         num_kernels = self.num_kernels_w * self.num_kernels_h
         self.weights = [
-            nn.Parameter(torch.Tensor(self.kernel_height, self.kernel_width))
+            nn.Parameter(torch.Tensor(self.out_channels, self.in_channels, self.kernel_height, self.kernel_width))
             for _ in range(num_kernels)
         ]  # initialise the individual kernel weights
 
         if params.bias:
             self.bias = nn.Parameter(
-                torch.Tensor(self.num_kernels_h, self.num_kernels_w)
+                torch.Tensor(self.num_kernels_h, self.num_kernels_w, self.out_channels)
             )
         else:
             self.register_parameter("bias", None)
@@ -140,26 +131,29 @@ class LocallyConnected2dV1(nn.Module):
             nn.init.zeros_(self.bias)
 
     def forward(self, x: torch.Tensor):
-        # x of shape batch_size, in_height, in_width
-        assert x.shape[1] == self.in_height, f"input height {x.shape[1]} does not equal expected height {self.in_height}"
-        assert x.shape[2] == self.in_width, f"input width {x.shape[2]} does not equal expected width {self.in_width}"
+        # x of shape batch_size, in_channels, in_height, in_width
+        assert x.shape[1] == self.in_channels, f"number of input channels {x.shape[1]} does not equal expected {self.in_channels}"
+        assert x.shape[2] == self.in_height, f"input height {x.shape[2]} does not equal expected height {self.in_height}"
+        assert x.shape[3] == self.in_width, f"input width {x.shape[3]} does not equal expected width {self.in_width}"
 
         padding = (self.padding_w, self.padding_w, self.padding_h, self.padding_h)
         x = F.pad(x, padding, "constant", 0)
 
-        out = torch.empty(x.shape[0], self.num_kernels_h, self.num_kernels_w)
+        out = torch.empty(x.shape[0], self.num_kernels_h, self.num_kernels_w, self.out_channels)
         for i, weight in enumerate(self.weights):
             # find the top left corner index of the receptive field for the ith kernel
             start_i = (i // self.num_kernels_w) * self.stride_h
             start_j = (i % self.num_kernels_w) * self.stride_w
             in_patch = x[
-                :,
+                :, :,
                 start_i : start_i + self.kernel_height,
                 start_j : start_j + self.kernel_width,
             ]
             # convolve this cross-batch receptive field with the coresponding kernel and store the result
-            conv = in_patch.mul(weight).sum((1, 2))
-            out[:, i // self.num_kernels_w, i % self.num_kernels_w] = conv
+            # in_patch: batch_size x in_channels x hernel_height x kernel_width
+            # weight: out_channels x in_channels x kernel_height x kernel_width
+            conv = in_patch.mul(weight).sum((1, 2, 3))
+            out[:, i // self.num_kernels_w, i % self.num_kernels_w, :] = conv
 
         if self.bias is not None:
             out += self.bias
@@ -167,22 +161,18 @@ class LocallyConnected2dV1(nn.Module):
         return out
 
 
-class LocallyConnected2dV2(nn.Module):
-    def __init__(self, params: LayerInputParams, num_kernels_w, num_kernels_h):
-        super(LocallyConnected2dV2, self).__init__()
-        assert params.kernel_height <= params.in_height + 2 * params.padding_h
-        assert params.kernel_width <= params.in_width + 2 * params.padding_w
 
-        self.in_height = params.in_height
-        self.in_width = params.in_width
-        self.stride_w = params.stride_w
-        self.stride_h = params.stride_h
-        self.padding_h = params.padding_h
-        self.padding_w = params.padding_w
-        self.kernel_width = params.kernel_width
-        self.kernel_height = params.kernel_height
-        self.num_kernels_w = num_kernels_w
-        self.num_kernels_h = num_kernels_h
+class LocallyConnected2dV2(nn.Module):
+    def __init__(self, params: LayerInputParams):
+        super(LocallyConnected2dV2, self).__init__()
+        assert params.kernel_dims[0] <= params.in_dims[0] + 2 * params.padding[0]
+        assert params.kernel_dims[1] <= params.in_dims[1] + 2 * params.padding[1]
+
+        self.in_height, self.in_width = params.in_dims
+        self.stride_h, self.stride_w = params.stride
+        self.padding_h, self.padding_w = params.padding
+        self.kernel_height, self.kernel_width = params.kernel_dims
+        self.num_kernels_h, self.num_kernels_w = params.num_kernels_out
         self.num_kernels = self.num_kernels_w * self.num_kernels_h
         self.kernel_weights = [
             nn.Parameter(torch.Tensor(self.kernel_height, self.kernel_width))
