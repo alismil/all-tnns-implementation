@@ -82,6 +82,15 @@ class LocallyConnected2d(nn.Module):
             self.register_parameter('bias', None)
         self.kernel_size = _pair(kernel_size)
         self.stride = _pair(stride)
+
+    def flatten_into_2D(self, x: torch.Tensor):
+        # TODO add batch dim
+        # batch x out_channels x out_height x out_width
+        out_channels, out_height, out_width = x.shape
+        root_channels = int(math.sqrt(out_channels))
+        x = x.permute(1, 2, 0).reshape(out_height,out_width,root_channels,root_channels)
+        x = x.permute(0, 2, 1, 3).reshape(root_channels*out_height, root_channels*out_width)
+        return x
         
     def forward(self, x: torch.Tensor):
         _, c, h, w = x.size()
@@ -114,10 +123,10 @@ class LocallyConnected2dV1(nn.Module):
             nn.Parameter(torch.Tensor(self.out_channels, self.in_channels, self.kernel_height, self.kernel_width))
             for _ in range(num_kernels)
         ]  # initialise the individual kernel weights
-
+        
         if params.bias:
             self.bias = nn.Parameter(
-                torch.Tensor(self.num_kernels_h, self.num_kernels_w, self.out_channels)
+                torch.Tensor(self.out_channels, self.num_kernels_h, self.num_kernels_w)
             )
         else:
             self.register_parameter("bias", None)
@@ -130,6 +139,15 @@ class LocallyConnected2dV1(nn.Module):
         if self.bias is not None:
             nn.init.zeros_(self.bias)
 
+    def flatten_into_2D(self, x: torch.Tensor):
+        # TODO add batch dim
+        # batch x out_channels x out_height x out_width
+        out_channels, out_height, out_width = x.shape
+        root_channels = int(math.sqrt(out_channels))
+        x = x.permute(1, 2, 0).reshape(out_height,out_width,root_channels,root_channels)
+        x = x.permute(0, 2, 1, 3).reshape(root_channels*out_height, root_channels*out_width)
+        return x
+
     def forward(self, x: torch.Tensor):
         # x of shape batch_size, in_channels, in_height, in_width
         assert x.shape[1] == self.in_channels, f"number of input channels {x.shape[1]} does not equal expected {self.in_channels}"
@@ -139,7 +157,7 @@ class LocallyConnected2dV1(nn.Module):
         padding = (self.padding_w, self.padding_w, self.padding_h, self.padding_h)
         x = F.pad(x, padding, "constant", 0)
 
-        out = torch.empty(x.shape[0], self.num_kernels_h, self.num_kernels_w, self.out_channels)
+        out = torch.empty(x.shape[0], self.out_channels, self.num_kernels_h, self.num_kernels_w)
         for i, weight in enumerate(self.weights):
             # find the top left corner index of the receptive field for the ith kernel
             start_i = (i // self.num_kernels_w) * self.stride_h
@@ -152,8 +170,8 @@ class LocallyConnected2dV1(nn.Module):
             # convolve this cross-batch receptive field with the coresponding kernel and store the result
             # in_patch: batch_size x in_channels x hernel_height x kernel_width
             # weight: out_channels x in_channels x kernel_height x kernel_width
-            conv = in_patch.mul(weight).sum((1, 2, 3))
-            out[:, i // self.num_kernels_w, i % self.num_kernels_w, :] = conv
+            conv = in_patch.unsqueeze(1).mul(weight).sum((2, 3, 4))
+            out[:, :, i // self.num_kernels_w, i % self.num_kernels_w] = conv
 
         if self.bias is not None:
             out += self.bias
@@ -244,3 +262,5 @@ class LocallyConnected2dV2(nn.Module):
             out += self.bias
 
         return out
+    
+
