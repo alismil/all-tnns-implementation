@@ -7,8 +7,8 @@ class LayerInputParams:
     kernel_dims: Tuple[int]
     in_dims: Tuple[int] = None
     num_kernels_out: Tuple[int] = None
-    stride: Tuple[int] = 1
-    padding: Tuple[int] = 0
+    stride: Tuple[int] = (1,1)
+    padding: Tuple[int] = (0,0)
     bias: bool = True
     in_channels: int = 1
     out_channels: int = 1
