@@ -69,6 +69,7 @@ class LocallyConnected2dV1(nn.Module):
         super(LocallyConnected2dV1, self).__init__()
         assert params.kernel_dims[0] <= params.in_dims[0] + 2 * params.padding[0], f"kernel_height {params.kernel_dims[0]} is greater than max {params.in_dims[0] + 2 * params.padding[0]}"
         assert params.kernel_dims[1] <= params.in_dims[1] + 2 * params.padding[1], f"kernel_width {params.kernel_dims[1]} is greater than max {params.in_dims[1] + 2 * params.padding[1]}"
+        assert math.sqrt(params.out_channels) % 1 == 0.0, f"out_channels is set to {params.out_channels}, which is not a perfect quare"
 
         self.in_height, self.in_width = params.in_dims
         self.stride_h, self.stride_w = params.stride
@@ -128,7 +129,8 @@ class LocallyConnected2dV1(nn.Module):
             start_i = (i // self.num_kernels_w) * self.stride_h
             start_j = (i % self.num_kernels_w) * self.stride_w
             in_patch = x[
-                :, :,
+                :, 
+                :,
                 start_i : start_i + self.kernel_height,
                 start_j : start_j + self.kernel_width,
             ]
@@ -141,6 +143,4 @@ class LocallyConnected2dV1(nn.Module):
         if self.bias is not None:
             out += self.bias
 
-        return out
-    
-
+        return self.flatten_into_2D(out)
