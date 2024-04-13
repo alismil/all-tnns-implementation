@@ -69,7 +69,7 @@ class LocallyConnected2dV1(nn.Module):
         super(LocallyConnected2dV1, self).__init__()
         assert params.kernel_dims[0] <= params.in_dims[0] + 2 * params.padding[0], f"kernel_height {params.kernel_dims[0]} is greater than max {params.in_dims[0] + 2 * params.padding[0]}"
         assert params.kernel_dims[1] <= params.in_dims[1] + 2 * params.padding[1], f"kernel_width {params.kernel_dims[1]} is greater than max {params.in_dims[1] + 2 * params.padding[1]}"
-        assert math.sqrt(params.out_channels) % 1 == 0.0, f"out_channels is set to {params.out_channels}, which is not a perfect quare"
+        assert math.sqrt(params.out_channels) % 1 == 0.0, f"out_channels is set to {params.out_channels}, which is not a perfect square"
 
         self.in_height, self.in_width = params.in_dims
         self.stride_h, self.stride_w = params.stride
