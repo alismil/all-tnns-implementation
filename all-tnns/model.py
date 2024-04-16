@@ -12,58 +12,6 @@ A dropout of 0.2 is applied to all layers during training.
 """
 
 
-class AllTnn(nn.Module):
-    @staticmethod
-    def calc_activation_shape(params: LayerInputParams):
-        num_kernels_w = (
-            math.floor(
-                (params.in_dims[1] - params.kernel_dims[1] + 2 * params.padding[1])
-                / params.stride[1]
-            ) + 1
-        )  # number of kernels that fit in the width of input
-        num_kernels_h = (
-            math.floor(
-                (params.in_dims[0] - params.kernel_dims[0] + 2 * params.padding[0])
-                / params.stride[0]
-            ) + 1
-        )  # number of kernels that fit in the height of input
-
-        return num_kernels_h, num_kernels_w
-
-    def __init__(self, config: ModelConfig):
-        super().__init__()
-
-        self.convs = []
-        self.norms = []
-        self.num_layers = len(config.layers)
-
-        for i in range(self.num_layers):
-            out_shape = AllTnn.calc_activation_shape(config.layers[i])
-            config.layers[i].num_kernels_out=out_shape
-            self.convs.append(LocallyConnected2dV1(config.layers[i]))
-            self.norms.append(torch.nn.LayerNorm([*out_shape]))
-            # we will be applying 2x2 pooling to every other layer
-            div = 2 if i % 2 == 0 else 1
-            config.layers[i+1].in_dims = (out_shape[0] // div, out_shape[0] // div) 
-
-        self.pool = nn.MaxPool2d(config.max_pool_kernel_dim, config.max_pool_stride)
-        self.dropout = nn.Dropout2d(p=config.dropout_p)
-        self.fc1 = nn.Linear(out_shape[0] * out_shape[1], config.fc1_hidden_dim)
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self, x: torch.Tensor):
-        for i in range(self.num_layers):
-            x = self.norms[i](F.relu(self.convs[i](x)))
-            if i % 2 == 0:
-                x = self.pool(x)
-            x = self.dropout(x)
-
-        x = torch.flatten(x, 1)
-        x = self.fc1(x)
-
-        return self.softmax(x)
-
-
 class LocallyConnected2dV1(nn.Module):
     def __init__(self, params: LayerInputParams):
         super(LocallyConnected2dV1, self).__init__()
@@ -79,6 +27,7 @@ class LocallyConnected2dV1(nn.Module):
         self.out_channels = params.out_channels
         self.num_kernels_h, self.num_kernels_w = params.num_kernels_out
         num_kernels = self.num_kernels_w * self.num_kernels_h
+
         self.weights = [
             nn.Parameter(torch.Tensor(self.out_channels, self.in_channels, self.kernel_height, self.kernel_width))
             for _ in range(num_kernels)
@@ -112,7 +61,7 @@ class LocallyConnected2dV1(nn.Module):
         root_channels = int(math.sqrt(out_channels))
         x = x.permute(0, 2, 3, 1).reshape(batch_size, out_height, out_width, root_channels, root_channels)
         x = x.permute(0, 1, 3, 2, 4).reshape(batch_size, root_channels * out_height, root_channels * out_width)
-        return x
+        return x.unsqueeze(1)
 
     def forward(self, x: torch.Tensor):
         # x of shape batch_size, in_channels, in_height, in_width
@@ -144,3 +93,57 @@ class LocallyConnected2dV1(nn.Module):
             out += self.bias
 
         return self.flatten_into_2D(out)
+
+
+class AllTnn(nn.Module):
+    @staticmethod
+    def calc_activation_shape(params: LayerInputParams):
+        num_kernels_w = (
+            math.floor(
+                (params.in_dims[1] - params.kernel_dims[1] + 2 * params.padding[1])
+                / params.stride[1]
+            ) + 1
+        )  # number of kernels that fit in the width of input
+        num_kernels_h = (
+            math.floor(
+                (params.in_dims[0] - params.kernel_dims[0] + 2 * params.padding[0])
+                / params.stride[0]
+            ) + 1
+        )  # number of kernels that fit in the height of input
+
+        return int(math.sqrt(params.out_channels)*num_kernels_h), int(math.sqrt(params.out_channels)*num_kernels_w)
+
+    def __init__(self, config: ModelConfig):
+        super().__init__()
+
+        self.convs = []
+        self.norms = []
+        self.num_layers = len(config.layers)
+
+        for i in range(self.num_layers):
+            out_shape = AllTnn.calc_activation_shape(config.layers[i])
+            config.layers[i].num_kernels_out = tuple(int(x // math.sqrt(config.layers[i].out_channels)) for x in out_shape)
+            self.convs.append(LocallyConnected2dV1(config.layers[i]))
+            self.norms.append(torch.nn.LayerNorm([*out_shape]))
+            # we will be applying 2x2 pooling to every other layer
+            div = 2 if i % 2 == 0 else 1
+            if i < self.num_layers - 1:
+                config.layers[i+1].in_dims = tuple(x // div for x in out_shape)
+
+        self.pool = nn.MaxPool2d(config.max_pool_kernel_dim, config.max_pool_stride)
+        self.dropout = nn.Dropout2d(p=config.dropout_p)
+        self.fc1 = nn.Linear(out_shape[0] * out_shape[1], config.fc1_hidden_dim)
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, x: torch.Tensor):
+        for i in range(self.num_layers):
+            x = self.norms[i](F.relu(self.convs[i](x)))
+            if i % 2 == 0:
+                x = self.pool(x)
+            x = self.dropout(x)
+
+        x = torch.flatten(x, 1)
+        x = self.fc1(x)
+
+        return self.softmax(x)
+    

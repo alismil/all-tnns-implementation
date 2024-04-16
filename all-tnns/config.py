@@ -18,12 +18,12 @@ class LayerInputParams:
 class ModelConfig:
     layers: List[LayerInputParams] = field(
         default_factory=lambda: [
-        LayerInputParams(in_dims=(150,150), kernel_dims=(5,5), in_channels=3),
-        LayerInputParams(kernel_dims=(7,7)),
-        LayerInputParams(kernel_dims=(10,10)),
-        LayerInputParams(kernel_dims=(13,13)),
-        LayerInputParams(kernel_dims=(15,15)),
-        LayerInputParams(kernel_dims=(1,1))
+        LayerInputParams(in_dims=(150,150), kernel_dims=(7,7), stride=(3,3), in_channels=3, out_channels=64),
+        LayerInputParams(kernel_dims=(24,24), stride=(8,8), out_channels=81),
+        LayerInputParams(kernel_dims=(27,27), stride=(9,9), out_channels=81),
+        LayerInputParams(kernel_dims=(27,27), stride=(4,4), out_channels=64),
+        LayerInputParams(kernel_dims=(48,48), stride=(7,7), out_channels=64),
+        LayerInputParams(kernel_dims=(48,48), stride=(1,1), out_channels=2500)
     ])
     batch_size: int = 256
     fc1_hidden_dim: int = 565
