@@ -149,7 +149,7 @@ class AllTnn(nn.Module):
             if i % 2 == 0:
                 x = self.pool(x)
             x = self.dropout(x)
-        print(all_weights, '\n\n', all_out_dims)
+
         x = torch.flatten(x, 1)
         x = self.fc1(x)
 

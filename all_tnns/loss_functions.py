@@ -32,7 +32,7 @@ def spatial_similarity_loss_single_layer(weights: list[torch.Tensor], layer_dims
             dist_current_right = cos(current_w, right_w)
             dist_current_bottom = cos(current_w, bottom_w)
             loss += dist_current_right + dist_current_bottom
-    print((alpha/(2*n))*loss)
+
     return (alpha/(2*n))*loss
 
 def spatial_similarity_loss(
