@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import math
 
 def spatial_similarity_loss_single_layer(weights: list[torch.Tensor], layer_dims: tuple[int], alpha: float):
@@ -23,31 +24,33 @@ def spatial_similarity_loss_single_layer(weights: list[torch.Tensor], layer_dims
 
     loss = 0
     n = len(weights) * weights[0].shape[0]
-    for i in range(layer_dims[0]-1):
-        for j in range(layer_dims[1]-1):
+    for i in range(layer_dims[0] - 1):
+        for j in range(layer_dims[1] - 1):
             current_w = get_weight(i, j)
             right_w = get_weight(i, j + 1)
             bottom_w = get_weight(i + 1, j)
-            print(f"i, j: {i}, {j}\n\n current_w: {current_w}\n\n right_w: {right_w}\n\n bottom_w: {bottom_w}")
             dist_current_right = cos(current_w, right_w)
             dist_current_bottom = cos(current_w, bottom_w)
             loss += dist_current_right + dist_current_bottom
-
+    print((alpha/(2*n))*loss)
     return (alpha/(2*n))*loss
 
+def spatial_similarity_loss(
+        all_layer_weights: list[list[torch.Tensor]], 
+        all_layer_dims: list[tuple[int]], 
+        all_alpha: list[float]
+        ):
+    
+    assert len(all_layer_weights) == len(all_layer_dims) == len(all_alpha)
+    
+    loss = 0
+    for i in range(len(all_layer_weights)):
+        layer_loss = spatial_similarity_loss_single_layer(all_layer_weights[i], all_layer_dims[i], all_alpha[i])
+        loss += layer_loss.item()
 
-num_kernels_h = 2
-num_kernels_w = 2
-out_channels = 4
-root_channels = int(math.sqrt(out_channels))
-in_channels = 1
-kernel_height = 2
-kernel_width = 2
+    return loss
 
-weights = [torch.randint(3, (out_channels,in_channels,kernel_height,kernel_width), dtype=float) for _ in range(num_kernels_h * num_kernels_w)]
-layer_dims = (num_kernels_h*root_channels,num_kernels_w*root_channels)
-alpha = 0.1
+def cross_entropy_loss(output, target):
+    loss = F.cross_entropy(output, target)
+    return loss
 
-print(weights)
-
-print("loss: ", spatial_similarity_loss_single_layer(weights, layer_dims, alpha))

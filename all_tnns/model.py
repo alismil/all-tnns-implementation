@@ -52,7 +52,7 @@ class LocallyConnected2dV1(nn.Module):
         """ 
         Takes a 3D layer of size channels x height x width per batch 
         and 'unrolls' it into a 2D layer of size 
-        root(channels)*height x root(channels)*width per batch 
+        sqrt(channels)*height x sqrt(channels)*width per batch 
         where e.g. a vector across the channel dimension for a 
         particular height and width, say [1,2,3,4], gets represented as
         [[1,2,...],[3,4,...],...] in the 2D layer.
@@ -84,7 +84,7 @@ class LocallyConnected2dV1(nn.Module):
                 start_j : start_j + self.kernel_width,
             ]
             # convolve this cross-batch receptive field with the coresponding kernel and store the result
-            # in_patch: batch_size x in_channels x hernel_height x kernel_width
+            # in_patch: batch_size x in_channels x kernel_height x kernel_width
             # weight: out_channels x in_channels x kernel_height x kernel_width
             conv = in_patch.unsqueeze(1).mul(weight).sum((2, 3, 4))
             out[:, :, i // self.num_kernels_w, i % self.num_kernels_w] = conv
@@ -92,7 +92,7 @@ class LocallyConnected2dV1(nn.Module):
         if self.bias is not None:
             out += self.bias
 
-        return self.flatten_into_2D(out)
+        return self.flatten_into_2D(out), self.weights
 
 
 class AllTnn(nn.Module):
@@ -136,14 +136,22 @@ class AllTnn(nn.Module):
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x: torch.Tensor):
+
+        # keep track of all layer weights and dimensions for the spatial similarity loss
+        all_weights = []
+        all_out_dims = []
+
         for i in range(self.num_layers):
-            x = self.norms[i](F.relu(self.convs[i](x)))
+            x, weights = self.convs[i](x)
+            all_weights.append(weights)
+            all_out_dims.append((x.shape[2], x.shape[3]))
+            x = self.norms[i](F.relu(x))
             if i % 2 == 0:
                 x = self.pool(x)
             x = self.dropout(x)
-
+        print(all_weights, '\n\n', all_out_dims)
         x = torch.flatten(x, 1)
         x = self.fc1(x)
 
-        return self.softmax(x)
-    
+        return self.softmax(x), all_weights
+
