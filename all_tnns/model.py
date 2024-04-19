@@ -139,12 +139,12 @@ class AllTnn(nn.Module):
 
         # keep track of all layer weights and dimensions for the spatial similarity loss
         all_weights = []
-        all_out_dims = []
+        all_layer_dims = []
 
         for i in range(self.num_layers):
             x, weights = self.convs[i](x)
             all_weights.append(weights)
-            all_out_dims.append((x.shape[2], x.shape[3]))
+            all_layer_dims.append((x.shape[2], x.shape[3]))
             x = self.norms[i](F.relu(x))
             if i % 2 == 0:
                 x = self.pool(x)
@@ -153,5 +153,5 @@ class AllTnn(nn.Module):
         x = torch.flatten(x, 1)
         x = self.fc1(x)
 
-        return self.softmax(x), all_weights
+        return self.softmax(x), all_weights, all_layer_dims
 
