@@ -1,6 +1,6 @@
 import logging
 import os
-from contextlib import nullcontext
+import time
 
 import torch
 import wandb
@@ -11,26 +11,19 @@ from loss_functions import all_tnn_loss
 from model import AllTnn
 from torch.utils.data import DataLoader
 
+torch.autograd.set_detect_anomaly(True)
+
 
 class Trainer:
     def __init__(self, train_config: TrainConfig, model_config: ModelConfig):
         self.cfg = train_config
 
         self.model_cfg = model_config
-        self.model = AllTnn(model_config)
+        self.model = AllTnn(model_config).to(self.cfg.device)
         self.all_alpha = [layer.alpha for layer in model_config.layers]
 
-        device_type = "cuda" if "cuda" in self.cfg.device else "cpu"
-        ptdtype = {
-            "float32": torch.float32,
-            "bfloat16": torch.bfloat16,
-            "float16": torch.float16,
-        }[self.cfg.dtype]
-        self.ctx = (
-            nullcontext()
-            if device_type == "cpu"
-            else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
-        )
+        os.makedirs(self.cfg.out_dir, exists_ok=True)
+
         train_dataset = load_dataset(
             "kietzmannlab/ecoset", streaming=True, split="train"
         )
@@ -70,8 +63,10 @@ class Trainer:
                 data = next(self.train_dataloader)
                 inputs, labels = data
 
-                with self.ctx:
-                    outputs, all_layer_weights, all_layer_dims = self.model(inputs)
+                with self.cfg.ctx:
+                    outputs, all_layer_weights, all_layer_dims = self.model(
+                        inputs.to(self.cfg.device)
+                    )
                     loss = all_tnn_loss(
                         outputs,
                         labels,
@@ -94,6 +89,7 @@ class Trainer:
                 name=self.cfg.wandb_run_name,
                 config=self.cfg,
             )
+            wandb.watch(self.model)
 
         param_count = sum(p.numel() for p in self.model.parameters())
         flop_count = self.get_flops(self.model, self.test_dataloader, self.cfg.device)
@@ -106,16 +102,18 @@ class Trainer:
             weight_decay=self.cfg.weight_decay,
         )
 
+        t0 = time.time()
         best_val_loss = 1e9
 
         for _ in range(self.cfg.num_epochs):
             for i, data in enumerate(self.train_dataloader, 0):
+                self.model.train()
 
                 inputs, labels = data
 
-                optimizer.zero_grad()
-
-                outputs, all_layer_weights, all_layer_dims = self.model(inputs)
+                outputs, all_layer_weights, all_layer_dims = self.model(
+                    inputs.to(self.cfg.device)
+                )
 
                 loss = all_tnn_loss(
                     outputs,
@@ -126,11 +124,18 @@ class Trainer:
                 )
                 loss.backward()
                 optimizer.step()
+                optimizer.zero_grad()
+
+                t1 = time.time()
 
                 if i % self.cfg.log_interval == 0:
                     if self.cfg.wandb_log:
                         wandb.log({"train_loss": loss})
-                    logging.info(f"iter {i} loss: {loss}")
+                    logging.info(
+                        f"iter {i} train loss: {loss.item():.4f}, time: {t1-t0:.2f}s"
+                    )
+
+                t0 = t1
 
                 if i % self.cfg.eval_interval == 0:
                     losses = self.estimate_loss()

@@ -1,5 +1,7 @@
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import List, Tuple
+
 import torch
 
 
@@ -66,5 +68,21 @@ class TrainConfig:
     wandb_project = "All-TNNs"
     wandb_run_name = "run1"
 
-    device: str = "cpu"
-    dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'
+    # hardware
+    device: str = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device_type = "cuda" if "cuda" in device else "cpu"
+    dtype = (
+        "bfloat16"
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        else "float16"
+    )
+    ptdtype = {
+        "float32": torch.float32,
+        "bfloat16": torch.bfloat16,
+        "float16": torch.float16,
+    }[dtype]
+    ctx = (
+        nullcontext()
+        if device_type == "cpu"
+        else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+    )
