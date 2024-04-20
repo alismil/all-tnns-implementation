@@ -120,7 +120,7 @@ class Trainer:
         t0 = time.time()
         best_val_loss = 1e9
 
-        for _ in range(self.cfg.num_epochs):
+        for e in range(self.cfg.num_epochs):
             for i, data in enumerate(self.loaders["train"]):
                 print(i)
                 self.model.train()
@@ -152,7 +152,7 @@ class Trainer:
                     if self.cfg.wandb_log:
                         wandb.log({"train_loss": loss})
                     logging.info(
-                        f"iter {i} train loss: {loss.item():.4f}, time: {t1-t0:.2f}s"
+                        f"epoch {e}, iter {i} train loss: {loss.item():.4f}, time: {t1-t0:.2f}s"
                     )
 
                 t0 = t1
@@ -160,7 +160,7 @@ class Trainer:
                 if i % self.cfg.eval_interval == 0:
                     losses = self.estimate_loss()
                     logging.info(
-                        f"iter {i}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
+                        f"epoch {e}, iter {i}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
                     )
                     if self.cfg.wandb_log:
                         wandb.log(
@@ -176,6 +176,7 @@ class Trainer:
                                 "model": self.model.state_dict(),
                                 "optimizer": optimizer.state_dict(),
                                 "model_config": self.model_cfg,
+                                "epoch": e,
                                 "iter_num": i,
                                 "best_val_loss": best_val_loss,
                                 "train_config": self.cfg,
@@ -185,7 +186,7 @@ class Trainer:
                                 checkpoint,
                                 os.path.join(
                                     self.cfg.out_dir,
-                                    f"{i}_{losses['val']:.2f}_{self.cfg.wandb_run_name}.pt",
+                                    f"epoch_{e}_iter_{i}_val_loss_{losses['val']:.2f}_{self.cfg.wandb_run_name}.pt",
                                 ),
                             )
 
