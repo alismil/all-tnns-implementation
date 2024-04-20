@@ -3,13 +3,16 @@ import os
 import time
 
 import torch
-import wandb
 from config import ModelConfig, TrainConfig
-from datasets import load_dataset
+from data_loader import create_dataset
 from fvcore.nn import FlopCountAnalysis
 from loss_functions import all_tnn_loss
 from model import AllTnn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
+
+import wandb
+
+logging.basicConfig(level=logging.INFO)
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -22,25 +25,31 @@ class Trainer:
         self.model = AllTnn(model_config).to(self.cfg.device)
         self.all_alpha = [layer.alpha for layer in model_config.layers]
 
-        os.makedirs(self.cfg.out_dir, exists_ok=True)
+        os.makedirs(self.cfg.out_dir, exist_ok=True)
 
-        train_dataset = load_dataset(
-            "kietzmannlab/ecoset", streaming=True, split="train"
-        )
-        self.train_dataloader = DataLoader(
-            train_dataset,
-            batch_size=self.cfg.train_batch_size,
-            shuffle=True,
-            num_workers=2,
+        dataset = create_dataset(
+            self.cfg.dataset_path,
+            input_size=self.cfg.input_size,
+            min_scale=self.cfg.min_scale,
+            hflip=self.cfg.hflip,
+            color_jitter=self.cfg.color_jitter,
+            keep_in_memory=self.cfg.keep_in_memory,
         )
 
-        test_dataset = load_dataset("kietzmannlab/ecoset", streaming=True, split="test")
-        self.test_dataloader = DataLoader(
-            test_dataset,
-            batch_size=self.cfg.val_batch_size,
-            shuffle=True,
-            num_workers=2,
-        )
+        self.loaders = {}
+        for split, ds in dataset.items():  # ['train', 'validation']
+            self.loaders[split] = DataLoader(
+                ds,
+                batch_size=(
+                    self.cfg.train_batch_size
+                    if split == "train"
+                    else self.cfg.val_batch_size
+                ),
+                sampler=RandomSampler(dataset) if self.cfg.shuffle else None,
+                num_workers=self.cfg.num_workers,
+                pin_memory=self.cfg.pin_memory,
+                drop_last=self.cfg.drop_last,
+            )
 
     @torch.no_grad()
     def get_flops(
@@ -57,11 +66,13 @@ class Trainer:
         """Calculates average loss over eval_iters mini batches from test set"""
         out = {}
         self.model.eval()
-        for split in ["train", "val"]:
+
+        for split in self.loaders.keys():
             losses = torch.zeros(self.cfg.eval_iters)
             for k in range(self.cfg.eval_iters):
-                data = next(self.train_dataloader)
-                inputs, labels = data
+                data = next(iter(self.loaders[split]))
+                inputs = data["image"]
+                labels = data["label"]
 
                 with self.cfg.ctx:
                     outputs, all_layer_weights, all_layer_dims = self.model(
@@ -92,8 +103,12 @@ class Trainer:
             wandb.watch(self.model)
 
         param_count = sum(p.numel() for p in self.model.parameters())
-        flop_count = self.get_flops(self.model, self.test_dataloader, self.cfg.device)
-        logging.info("Params: %.0fM, FLOPs: %.0fM", param_count / 1e6, flop_count / 1e6)
+        logging.info("Params: %.0fM", param_count / 1e6)
+
+        # flop_count = self.get_flops(
+        #     self.model, self.loaders["validation"], self.cfg.device
+        # )
+        # logging.info("Params: %.0fM, FLOPs: %.0fM", param_count / 1e6, flop_count / 1e6)
 
         optimizer = torch.optim.Adam(
             self.model.parameters(),
@@ -106,14 +121,18 @@ class Trainer:
         best_val_loss = 1e9
 
         for _ in range(self.cfg.num_epochs):
-            for i, data in enumerate(self.train_dataloader, 0):
+            for i, data in enumerate(self.loaders["train"]):
+                print(i)
                 self.model.train()
 
-                inputs, labels = data
+                inputs = data["image"]
+                labels = data["label"]
 
                 outputs, all_layer_weights, all_layer_dims = self.model(
                     inputs.to(self.cfg.device)
                 )
+
+                print(outputs.shape)
 
                 loss = all_tnn_loss(
                     outputs,
@@ -122,6 +141,7 @@ class Trainer:
                     all_layer_dims,
                     self.all_alpha,
                 )
+                print(loss)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -168,3 +188,9 @@ class Trainer:
                                     f"{i}_{losses['val']:.2f}_{self.cfg.wandb_run_name}.pt",
                                 ),
                             )
+
+
+trainer = Trainer(train_config=TrainConfig(), model_config=ModelConfig())
+
+if __name__ == "__main__":
+    trainer.train()

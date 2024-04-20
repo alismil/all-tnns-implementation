@@ -26,7 +26,7 @@ def spatial_similarity_loss_single_layer(
         )
         channel_index = int(((i % root_channels) * root_channels) + (j % root_channels))
         w = weights[list_index][channel_index, :, :, :]
-        return torch.flatten(w, 1)
+        return w.reshape(1, -1)
 
     loss = []
     n = len(weights) * weights[0].shape[0]

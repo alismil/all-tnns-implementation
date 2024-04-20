@@ -1,6 +1,6 @@
 from contextlib import nullcontext
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 
@@ -25,11 +25,12 @@ class ModelConfig:
     layers: List[LayerInputParams] = field(
         default_factory=lambda: [
             LayerInputParams(
-                in_dims=(150, 150),
+                in_dims=(128, 128),
                 kernel_dims=(7, 7),
-                stride=(3, 3),
+                stride=(4, 4),
+                padding=(2, 2),
                 in_channels=3,
-                out_channels=64,
+                out_channels=144,
             ),
             LayerInputParams(kernel_dims=(24, 24), stride=(8, 8), out_channels=81),
             LayerInputParams(kernel_dims=(27, 27), stride=(9, 9), out_channels=81),
@@ -40,7 +41,7 @@ class ModelConfig:
             ),
         ]
     )
-    fc1_hidden_dim: int = 565
+    fc1_hidden_dim: int = 100
     dropout_p: float = 0.2
     max_pool_kernel_dim: int = 2
     max_pool_stride: int = 2
@@ -49,14 +50,27 @@ class ModelConfig:
 @dataclass
 class TrainConfig:
     num_epochs: int = 100
-    eval_interval: int = 2000  # number of mini batches between evals
-    log_interval: int = 10  # number of mini batches between logs
-    eval_iters: int = 200  # number of mini batches to use for eval
+    eval_interval: int = 2  # number of mini batches between evals
+    log_interval: int = 1  # number of mini batches between logs
+    eval_iters: int = 2  # number of mini batches to use for eval
 
-    train_batch_size: int = 256
-    val_batch_size: int = 256
+    train_batch_size: int = 2
+    val_batch_size: int = 2
 
     out_dir: str = "checkpoints"
+
+    # data loading
+    dataset_path: str = "clane9/imagenet-100"
+    shuffle: bool = True
+    num_workers: int = 0
+    pin_memory: bool = False
+    drop_last: bool = False
+    input_size: int = 128
+    min_scale: float = 0.4
+    hflip: float = 0.5
+    color_jitter: Optional[float] = 0.4
+    interpolation: str = "bicubic"
+    keep_in_memory: bool = False
 
     # optimizer
     lr: float = 0.001
@@ -64,13 +78,13 @@ class TrainConfig:
     weight_decay: float = 1e-6
 
     # wandb logging
-    wandb_log = True
+    wandb_log = False
     wandb_project = "All-TNNs"
-    wandb_run_name = "run1"
+    wandb_run_name = "test"
 
     # hardware
     device: str = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    device_type = "cuda" if "cuda" in device else "cpu"
+    device_type = "cuda" if "cuda" in str(device) else "cpu"
     dtype = (
         "bfloat16"
         if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
