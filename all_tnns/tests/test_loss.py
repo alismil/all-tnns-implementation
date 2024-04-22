@@ -47,4 +47,4 @@ alpha = 0.1
 
 def test_spatial_similarity_layer_loss():
     loss = spatial_similarity_loss_single_layer(weights, layer_dims, alpha)
-    assert round(loss.item(), 4) == 0.0424
+    assert round(loss.item(), 4) == 0.0551

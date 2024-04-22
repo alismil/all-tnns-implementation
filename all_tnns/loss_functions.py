@@ -18,7 +18,7 @@ def spatial_similarity_loss_single_layer(
     """
     out_channels = weights[0].shape[0]
     root_channels = int(math.sqrt(out_channels))
-    cos = nn.CosineSimilarity(dim=1, eps=1e-6)
+    cos = nn.CosineSimilarity(dim=2, eps=1e-6)
 
     def get_weight(i, j):
         list_index = int(
@@ -28,18 +28,20 @@ def spatial_similarity_loss_single_layer(
         w = weights[list_index][channel_index, :, :, :]
         return w.reshape(1, -1)
 
-    loss = []
-    n = len(weights) * weights[0].shape[0]
-    for i in range(layer_dims[0] - 1):
-        for j in range(layer_dims[1] - 1):
-            current_w = get_weight(i, j)
-            right_w = get_weight(i, j + 1)
-            bottom_w = get_weight(i + 1, j)
-            dist_current_right = cos(current_w, right_w)
-            dist_current_bottom = cos(current_w, bottom_w)
-            loss.append(dist_current_right + dist_current_bottom)
+    w_dim = weights[0].shape[1] * weights[0].shape[2] * weights[0].shape[3]
+    w = torch.empty(layer_dims[0], layer_dims[1], w_dim)
+    for i in range(layer_dims[0]):
+        for j in range(layer_dims[1]):
+            w[i, j, :] = get_weight(i, j)
 
-    return (alpha / (2 * n)) * sum(loss)
+    horizontal_distances = cos(w[:, :-1, :], w[:, 1:, :])  # cos_dist(w_i,j, w_i,j+1)
+    vertical_distances = cos(w[:-1, :, :], w[1:, :, :])  # cos_dist(w_i,j, w_i+1,j)
+
+    n = len(weights) * out_channels  # number of activations in the 2D layer
+
+    all_distances = torch.sum(horizontal_distances) + torch.sum(vertical_distances)
+
+    return (alpha / (2 * n)) * all_distances
 
 
 def spatial_similarity_loss(
