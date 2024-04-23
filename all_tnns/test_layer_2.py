@@ -15,7 +15,7 @@ root_channels = int(math.sqrt(out_channels))
 
 x = torch.rand(batch_size, in_channels, in_height, in_width)
 
-weights_proposed = nn.Parameter(
+weights = nn.Parameter(
     torch.Tensor(
         root_channels * num_kernels_h,
         root_channels * num_kernels_w,
@@ -35,7 +35,7 @@ x = x.repeat_interleave(repeats=root_channels, dim=1).repeat_interleave(
     repeats=root_channels, dim=2
 )
 # batch_size, num_kernels_h*root_channels, num_kernels_w*root_channels, kernel_height, kernel_width, in_channels
-x = weights_proposed.mul(x).sum((3, 4, 5))
+x = weights.mul(x).sum((3, 4, 5))
 
 end = time.time()
 print(end - start)
