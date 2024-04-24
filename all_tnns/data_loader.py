@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
@@ -31,11 +32,13 @@ def create_dataset(
     return dsets
 
 
-def _get_batch_transform(image_transform: Callable[[I.Image], torch.Tensor]):
-    def transform(
-        batch: Dict[str, List[Union[I.Image, Any]]],
-    ) -> Dict[str, torch.Tensor]:
-        batch["image"] = [image_transform(img.convert("RGB")) for img in batch["image"]]
-        return batch
+def _transform(
+    batch: Dict[str, List[Union[I.Image, Any]]],
+    image_transform: Callable[[I.Image], torch.Tensor],
+) -> Dict[str, torch.Tensor]:
+    batch["image"] = [image_transform(img.convert("RGB")) for img in batch["image"]]
+    return batch
 
-    return transform
+
+def _get_batch_transform(image_transform: Callable[[I.Image], torch.Tensor]):
+    return partial(_transform, image_transform=image_transform)
