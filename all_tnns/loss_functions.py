@@ -17,22 +17,40 @@ def spatial_similarity_loss_single_layer(
         - alpha: constant for this layer multiplying the cosine distances
     """
     out_channels = weights[0].shape[0]
+    in_channels = weights[0].shape[1]
+    kernel_height = weights[0].shape[2]
+    kernel_width = weights[0].shape[3]
+
     root_channels = int(math.sqrt(out_channels))
     cos = nn.CosineSimilarity(dim=2, eps=1e-6)
-
-    def get_weight(i, j):
-        list_index = int(
-            (i // root_channels * layer_dims[1] / root_channels) + (j // root_channels)
-        )
-        channel_index = int(((i % root_channels) * root_channels) + (j % root_channels))
-        w = weights[list_index][channel_index, :, :, :]
-        return w.reshape(1, -1)
-
     w_dim = weights[0].shape[1] * weights[0].shape[2] * weights[0].shape[3]
-    w = torch.empty(layer_dims[0], layer_dims[1], w_dim)
-    for i in range(layer_dims[0]):
-        for j in range(layer_dims[1]):
-            w[i, j, :] = get_weight(i, j)
+
+    w = torch.stack(weights).reshape(
+        layer_dims[0] // root_channels,
+        layer_dims[1] // root_channels,
+        out_channels,
+        in_channels,
+        kernel_height,
+        kernel_width,
+    )
+
+    w = w.flatten(3, 5)
+    # num_kernels_h, num_kernels_w, out_channels, in_channels*kernel_height*kernel_width
+
+    w = w.permute(3, 0, 1, 2).reshape(
+        w_dim,
+        layer_dims[0] // root_channels,
+        layer_dims[1] // root_channels,
+        root_channels,
+        root_channels,
+    )
+    w = w.permute(0, 1, 3, 2, 4).reshape(
+        w_dim,
+        layer_dims[0],
+        layer_dims[1],
+    )
+    w = w.permute(1, 2, 0)
+    # num_kernels_h*root_channels, num_kernels_w*root_channels, in_channels*kernel_height*kernel_width
 
     horizontal_distances = cos(w[:, :-1, :], w[:, 1:, :])  # cos_dist(w_i,j, w_i,j+1)
     vertical_distances = cos(w[:-1, :, :], w[1:, :, :])  # cos_dist(w_i,j, w_i+1,j)
