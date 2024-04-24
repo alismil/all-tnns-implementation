@@ -1,7 +1,8 @@
 from contextlib import nullcontext
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
 from datetime import datetime
+from typing import List, Optional, Tuple
+
 import torch
 
 
@@ -80,7 +81,7 @@ class TrainConfig:
     # wandb logging
     wandb_log = True
     wandb_project = "All-TNNs"
-    wandb_run_name = f"{str(datetime.now()).replace(" ", "_")}_imagenet_100"
+    wandb_run_name = str(datetime.now()).replace(" ", "_") + "_imagenet_100"
 
     # hardware
     device: str = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
