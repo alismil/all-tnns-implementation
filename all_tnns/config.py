@@ -1,7 +1,7 @@
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
-
+from datetime import datetime
 import torch
 
 
@@ -49,20 +49,20 @@ class ModelConfig:
 
 @dataclass
 class TrainConfig:
-    num_epochs: int = 100
-    eval_interval: int = 2  # number of mini batches between evals
-    log_interval: int = 1  # number of mini batches between logs
-    eval_iters: int = 2  # number of mini batches to use for eval
+    num_epochs: int = 10
+    eval_interval: int = 50  # number of mini batches between evals
+    log_interval: int = 10  # number of mini batches between logs
+    eval_iters: int = 50  # number of mini batches to use for eval
 
-    train_batch_size: int = 2
-    val_batch_size: int = 2
+    train_batch_size: int = 256
+    val_batch_size: int = 100
 
     out_dir: str = "checkpoints"
 
     # data loading
     dataset_path: str = "clane9/imagenet-100"
     shuffle: bool = True
-    num_workers: int = 0
+    num_workers: int = 4
     pin_memory: bool = False
     drop_last: bool = False
     input_size: int = 128
@@ -78,9 +78,9 @@ class TrainConfig:
     weight_decay: float = 1e-6
 
     # wandb logging
-    wandb_log = False
+    wandb_log = True
     wandb_project = "All-TNNs"
-    wandb_run_name = "test"
+    wandb_run_name = f"{str(datetime.now()).replace(" ", "_")}_imagenet_100"
 
     # hardware
     device: str = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
