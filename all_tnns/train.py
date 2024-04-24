@@ -45,7 +45,7 @@ class Trainer:
                     if split == "train"
                     else self.cfg.val_batch_size
                 ),
-                sampler=RandomSampler(dataset) if self.cfg.shuffle else None,
+                sampler=RandomSampler(ds) if self.cfg.shuffle else None,
                 num_workers=self.cfg.num_workers,
                 pin_memory=self.cfg.pin_memory,
                 drop_last=self.cfg.drop_last,
@@ -67,8 +67,8 @@ class Trainer:
         out = {}
         self.model.eval()
 
-        for split in self.loaders.keys():
-            losses = torch.zeros(self.cfg.eval_iters)
+        for split in ["train", "validation"]:
+            losses = torch.empty(self.cfg.eval_iters)
             for k in range(self.cfg.eval_iters):
                 data = next(iter(self.loaders[split]))
                 inputs = data["image"]
@@ -103,7 +103,7 @@ class Trainer:
             wandb.watch(self.model)
 
         param_count = sum(p.numel() for p in self.model.parameters())
-        logging.info("Params: %.0fM", param_count / 1e6)
+        logging.info(f"Params: {param_count / 1e3:.0f} K")
 
         # flop_count = self.get_flops(
         #     self.model, self.loaders["validation"], self.cfg.device
@@ -122,18 +122,19 @@ class Trainer:
 
         for e in range(self.cfg.num_epochs):
             for i, data in enumerate(self.loaders["train"]):
+                print("len(self.loaders['train']): ", len(self.loaders["train"]))
                 print(i)
                 self.model.train()
 
                 inputs = data["image"]
                 labels = data["label"]
 
+                one = time.time()
                 outputs, all_layer_weights, all_layer_dims = self.model(
                     inputs.to(self.cfg.device)
                 )
-
-                print(outputs.shape)
-
+                two = time.time()
+                print("forward time: ", two - one)
                 loss = all_tnn_loss(
                     outputs,
                     labels,
@@ -141,9 +142,14 @@ class Trainer:
                     all_layer_dims,
                     self.all_alpha,
                 )
-                print(loss)
+                three = time.time()
+                print("loss time: ", three - two)
                 loss.backward()
+                four = time.time()
+                print("loss backward time: ", four - three)
                 optimizer.step()
+                five = time.time()
+                print("oprimizer step time: ", five - four)
                 optimizer.zero_grad()
 
                 t1 = time.time()
@@ -160,17 +166,17 @@ class Trainer:
                 if i % self.cfg.eval_interval == 0:
                     losses = self.estimate_loss()
                     logging.info(
-                        f"epoch {e}, iter {i}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
+                        f"epoch {e}, iter {i}: train loss {losses['train']:.4f}, val loss {losses['validation']:.4f}"
                     )
                     if self.cfg.wandb_log:
                         wandb.log(
                             {
                                 "train_loss": losses["train"],
-                                "val_loss": losses["val"],
+                                "val_loss": losses["validation"],
                             }
                         )
-                    if losses["val"] < best_val_loss:
-                        best_val_loss = losses["val"]
+                    if losses["validation"] < best_val_loss:
+                        best_val_loss = losses["validation"]
                         if i > 0:
                             checkpoint = {
                                 "model": self.model.state_dict(),
@@ -186,7 +192,7 @@ class Trainer:
                                 checkpoint,
                                 os.path.join(
                                     self.cfg.out_dir,
-                                    f"epoch_{e}_iter_{i}_val_loss_{losses['val']:.2f}_{self.cfg.wandb_run_name}.pt",
+                                    f"epoch_{e}_iter_{i}_val_loss_{losses['validation']:.2f}_{self.cfg.wandb_run_name}.pt",
                                 ),
                             )
 
