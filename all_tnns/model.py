@@ -35,17 +35,19 @@ class LocallyConnected2dV1(nn.Module):
         self.num_kernels_h, self.num_kernels_w = params.num_kernels_out
         num_kernels = self.num_kernels_w * self.num_kernels_h
 
-        self.weights = [
-            nn.Parameter(
-                torch.Tensor(
-                    self.out_channels,
-                    self.in_channels,
-                    self.kernel_height,
-                    self.kernel_width,
+        self.weights = nn.ParameterList(
+            [
+                nn.Parameter(
+                    torch.Tensor(
+                        self.out_channels,
+                        self.in_channels,
+                        self.kernel_height,
+                        self.kernel_width,
+                    )
                 )
-            )
-            for _ in range(num_kernels)
-        ]  # initialise the individual kernel weights
+                for _ in range(num_kernels)
+            ]
+        )  # initialise the individual kernel weights
 
         if params.bias:
             self.bias = nn.Parameter(
