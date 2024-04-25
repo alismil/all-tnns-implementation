@@ -22,7 +22,7 @@ class Trainer:
         self.cfg = train_config
 
         self.model_cfg = model_config
-        self.model = AllTnn(model_config).to(self.cfg.device)
+        self.model = AllTnn(model_config, self.cfg.device).to(self.cfg.device)
         self.all_alpha = [layer.alpha for layer in model_config.layers]
 
         os.makedirs(self.cfg.out_dir, exist_ok=True)
@@ -71,13 +71,13 @@ class Trainer:
             losses = torch.empty(self.cfg.eval_iters)
             for k in range(self.cfg.eval_iters):
                 data = next(iter(self.loaders[split]))
-                inputs = data["image"]
-                labels = data["label"]
+
+                inputs = data["image"].to(self.cfg.device)
+                labels = data["label"].to(self.cfg.device)
 
                 with self.cfg.ctx:
-                    outputs, all_layer_weights, all_layer_dims = self.model(
-                        inputs.to(self.cfg.device)
-                    )
+                    outputs, all_layer_weights, all_layer_dims = self.model(inputs)
+
                     loss = all_tnn_loss(
                         outputs,
                         labels,
@@ -103,7 +103,7 @@ class Trainer:
             wandb.watch(self.model)
 
         param_count = sum(p.numel() for p in self.model.parameters())
-        logging.info(f"Params: {param_count / 1e3:.0f} K")
+        logging.info(f"Params: {param_count / 1e6:.0f} M")
 
         # flop_count = self.get_flops(
         #     self.model, self.loaders["validation"], self.cfg.device
@@ -126,13 +126,11 @@ class Trainer:
                 print(i)
                 self.model.train()
 
-                inputs = data["image"]
-                labels = data["label"]
+                inputs = data["image"].to(self.cfg.device)
+                labels = data["label"].to(self.cfg.device)
 
                 one = time.time()
-                outputs, all_layer_weights, all_layer_dims = self.model(
-                    inputs.to(self.cfg.device)
-                )
+                outputs, all_layer_weights, all_layer_dims = self.model(inputs)
                 two = time.time()
                 print("forward time: ", two - one)
                 loss = all_tnn_loss(
@@ -163,7 +161,7 @@ class Trainer:
 
                 t0 = t1
 
-                if i % self.cfg.eval_interval == 0:
+                if i % self.cfg.eval_interval == 0 and i > 0:
                     losses = self.estimate_loss()
                     logging.info(
                         f"epoch {e}, iter {i}: train loss {losses['train']:.4f}, val loss {losses['validation']:.4f}"
