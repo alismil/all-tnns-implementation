@@ -63,7 +63,7 @@ class TrainConfig:
     # data loading
     dataset_path: str = "clane9/imagenet-100"
     shuffle: bool = True
-    num_workers: int = 4
+    num_workers: int = 2
     pin_memory: bool = False
     drop_last: bool = False
     input_size: int = 128
@@ -79,7 +79,7 @@ class TrainConfig:
     weight_decay: float = 1e-6
 
     # wandb logging
-    wandb_log = True
+    wandb_log = False
     wandb_project = "All-TNNs"
     wandb_run_name = str(datetime.now()).replace(" ", "_") + "_imagenet_100"
 
