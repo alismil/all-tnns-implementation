@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 
 def spatial_similarity_loss_single_layer(
-    weights: list[torch.Tensor], layer_dims: tuple[int], alpha: float
+    weights: nn.ParameterList, layer_dims: tuple[int], alpha: float
 ):
     """
     Args:
@@ -16,6 +16,7 @@ def spatial_similarity_loss_single_layer(
         - layer_dims: (out_height, out_width)
         - alpha: constant for this layer multiplying the cosine distances
     """
+
     out_channels = weights[0].shape[0]
     in_channels = weights[0].shape[1]
     kernel_height = weights[0].shape[2]
@@ -23,9 +24,10 @@ def spatial_similarity_loss_single_layer(
 
     root_channels = int(math.sqrt(out_channels))
     cos = nn.CosineSimilarity(dim=2, eps=1e-6)
+
     w_dim = weights[0].shape[1] * weights[0].shape[2] * weights[0].shape[3]
 
-    w = torch.stack(weights).reshape(
+    w = torch.stack([weight for weight in weights]).reshape(
         layer_dims[0] // root_channels,
         layer_dims[1] // root_channels,
         out_channels,
@@ -58,12 +60,11 @@ def spatial_similarity_loss_single_layer(
     n = len(weights) * out_channels  # number of activations in the 2D layer
 
     all_distances = torch.sum(horizontal_distances) + torch.sum(vertical_distances)
-
     return (alpha / (2 * n)) * all_distances
 
 
 def spatial_similarity_loss(
-    all_layer_weights: list[list[torch.Tensor]],
+    all_layer_weights: list[nn.ParameterList],
     all_layer_dims: list[tuple[int]],
     all_alpha: list[float],
 ):
@@ -88,7 +89,7 @@ def cross_entropy_loss(output, target):
 def all_tnn_loss(
     output: torch.Tensor,
     target: torch.Tensor,
-    all_layer_weights: list[list[torch.Tensor]],
+    all_layer_weights: list[nn.ParameterList],
     all_layer_dims: list[tuple[int]],
     all_alpha: list[float],
 ):
