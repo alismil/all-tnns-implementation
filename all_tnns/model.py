@@ -14,7 +14,7 @@ A dropout of 0.2 is applied to all layers during training.
 
 
 class LocallyConnected2dV1(nn.Module):
-    def __init__(self, params: LayerInputParams):
+    def __init__(self, params: LayerInputParams, device):
         super(LocallyConnected2dV1, self).__init__()
         assert (
             params.kernel_dims[0] <= params.in_dims[0] + 2 * params.padding[0]
@@ -48,7 +48,6 @@ class LocallyConnected2dV1(nn.Module):
                 for _ in range(num_kernels)
             ]
         )  # initialise the individual kernel weights
-
         if params.bias:
             self.bias = nn.Parameter(
                 torch.Tensor(self.out_channels, self.num_kernels_h, self.num_kernels_w)
@@ -57,6 +56,10 @@ class LocallyConnected2dV1(nn.Module):
             self.register_parameter("bias", None)
 
         self.reset_parameters()
+
+        self.to(device)
+
+        self.device = device
 
     def reset_parameters(self):
         for weight in self.weights:
@@ -100,7 +103,8 @@ class LocallyConnected2dV1(nn.Module):
 
         out = torch.empty(
             x.shape[0], self.out_channels, self.num_kernels_h, self.num_kernels_w
-        )
+        ).to(self.device)
+
         for i, weight in enumerate(self.weights):
             # find the top left corner index of the receptive field for the ith kernel
             start_i = (i // self.num_kernels_w) * self.stride_h
@@ -145,11 +149,11 @@ class AllTnn(nn.Module):
             math.sqrt(params.out_channels) * num_kernels_w
         )
 
-    def __init__(self, config: ModelConfig):
+    def __init__(self, config: ModelConfig, device):
         super().__init__()
 
-        self.convs = []
-        self.norms = []
+        self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
         self.num_layers = len(config.layers)
 
         for i in range(self.num_layers):
@@ -157,7 +161,7 @@ class AllTnn(nn.Module):
             config.layers[i].num_kernels_out = tuple(
                 int(x // math.sqrt(config.layers[i].out_channels)) for x in out_shape
             )
-            self.convs.append(LocallyConnected2dV1(config.layers[i]))
+            self.convs.append(LocallyConnected2dV1(config.layers[i], device))
             self.norms.append(torch.nn.LayerNorm([*out_shape]))
             # we will be applying 2x2 pooling to every other layer
             div = 2 if i % 2 == 0 else 1
