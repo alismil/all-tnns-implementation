@@ -96,4 +96,4 @@ def all_tnn_loss(
     ce_loss = cross_entropy_loss(output, target)
     spatial_loss = spatial_similarity_loss(all_layer_weights, all_layer_dims, all_alpha)
 
-    return ce_loss + spatial_loss
+    return ce_loss - spatial_loss
