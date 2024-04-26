@@ -13,9 +13,9 @@ A dropout of 0.2 is applied to all layers during training.
 """
 
 
-class LocallyConnected2dV1(nn.Module):
+class LocallyConnected2d(nn.Module):
     def __init__(self, params: LayerInputParams, device):
-        super(LocallyConnected2dV1, self).__init__()
+        super(LocallyConnected2d, self).__init__()
         assert (
             params.kernel_dims[0] <= params.in_dims[0] + 2 * params.padding[0]
         ), f"kernel_height {params.kernel_dims[0]} is greater than max {params.in_dims[0] + 2 * params.padding[0]}"
@@ -161,7 +161,7 @@ class AllTnn(nn.Module):
             config.layers[i].num_kernels_out = tuple(
                 int(x // math.sqrt(config.layers[i].out_channels)) for x in out_shape
             )
-            self.convs.append(LocallyConnected2dV1(config.layers[i], device))
+            self.convs.append(LocallyConnected2d(config.layers[i], device))
             self.norms.append(torch.nn.LayerNorm([*out_shape]))
             # we will be applying 2x2 pooling to every other layer
             div = 2 if i % 2 == 0 else 1
