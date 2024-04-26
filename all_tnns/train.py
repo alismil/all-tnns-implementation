@@ -108,7 +108,7 @@ class Trainer:
         # flop_count = self.get_flops(
         #     self.model, self.loaders["validation"], self.cfg.device
         # )
-        # logging.info("Params: %.0fM, FLOPs: %.0fM", param_count / 1e6, flop_count / 1e6)
+        # logging.info(f"Params:{param_count / 1e6:.0f}M, FLOPs: {flop_count / 1e6:.0f}M")
 
         optimizer = torch.optim.Adam(
             self.model.parameters(),
@@ -122,8 +122,6 @@ class Trainer:
 
         for e in range(self.cfg.num_epochs):
             for i, data in enumerate(self.loaders["train"]):
-                print("len(self.loaders['train']): ", len(self.loaders["train"]))
-                print(i)
                 self.model.train()
 
                 inputs = data["image"].to(self.cfg.device)
@@ -147,7 +145,7 @@ class Trainer:
                 print("loss backward time: ", four - three)
                 optimizer.step()
                 five = time.time()
-                print("oprimizer step time: ", five - four)
+                print("optimizer step time: ", five - four)
                 optimizer.zero_grad()
 
                 t1 = time.time()
