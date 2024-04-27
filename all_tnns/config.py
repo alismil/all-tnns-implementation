@@ -50,10 +50,14 @@ class ModelConfig:
 
 @dataclass
 class TrainConfig:
+    resume_from_checkpoint: bool = False  # whether to resume training from a checkpoint
+    checkpoint_to_resume_from: str = (
+        ""  # the path of the checkoint to resume from if resume_from_checkpoint is True
+    )
     num_epochs: int = 10
-    eval_interval: int = 50  # number of mini batches between evals
+    eval_interval: int = 1  # number of mini batches between evals
     log_interval: int = 10  # number of mini batches between logs
-    eval_iters: int = 50  # number of mini batches to use for eval
+    eval_iters: int = 1  # number of mini batches to use for eval
 
     train_batch_size: int = 256
     val_batch_size: int = 100

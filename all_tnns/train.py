@@ -21,9 +21,50 @@ class Trainer:
     def __init__(self, train_config: TrainConfig, model_config: ModelConfig):
         self.cfg = train_config
 
-        self.model_cfg = model_config
-        self.model = AllTnn(model_config, self.cfg.device).to(self.cfg.device)
-        self.all_alpha = [layer.alpha for layer in model_config.layers]
+        if self.cfg.resume_from_checkpoint:
+            checkpoint = torch.load(
+                self.cfg.checkpoint_to_resume_from, map_location=self.cfg.device
+            )
+
+            checkpoint_model_config = checkpoint["model_config"]
+            self.model = AllTnn(checkpoint_model_config, self.cfg.device).to(
+                self.cfg.device
+            )
+            state_dict = checkpoint["model"]
+            unwanted_prefix = "_orig_mod."
+            for k, _ in list(state_dict.items()):
+                if k.startswith(unwanted_prefix):
+                    state_dict[k[len(unwanted_prefix) :]] = state_dict.pop(k)
+            self.model.load_state_dict(state_dict)
+
+            self.optimizer = torch.optim.Adam(
+                self.model.parameters(),
+                lr=self.cfg.lr,
+                eps=self.cfg.eps,
+                weight_decay=self.cfg.weight_decay,
+            )
+
+            self.optimizer.load_state_dict(checkpoint["optimizer"])
+
+            self.begin_iter = checkpoint["iter_num"]
+            self.begin_epoch = checkpoint["epoch"]
+            self.best_val_loss = checkpoint["best_val_loss"]
+
+        else:
+            self.model_cfg = model_config
+            self.model = AllTnn(model_config, self.cfg.device).to(self.cfg.device)
+            self.all_alpha = [layer.alpha for layer in model_config.layers]
+
+            self.optimizer = torch.optim.Adam(
+                self.model.parameters(),
+                lr=self.cfg.lr,
+                eps=self.cfg.eps,
+                weight_decay=self.cfg.weight_decay,
+            )
+
+            self.begin_iter = 0
+            self.begin_epoch = 0
+            self.best_val_loss = 1e9
 
         os.makedirs(self.cfg.out_dir, exist_ok=True)
 
@@ -105,23 +146,16 @@ class Trainer:
         param_count = sum(p.numel() for p in self.model.parameters())
         logging.info(f"Params: {param_count / 1e6:.0f} M")
 
+        # TODO FlopCountAnalysis does not work for input of type ParameterList
         # flop_count = self.get_flops(
         #     self.model, self.loaders["validation"], self.cfg.device
         # )
         # logging.info(f"Params:{param_count / 1e6:.0f}M, FLOPs: {flop_count / 1e6:.0f}M")
 
-        optimizer = torch.optim.Adam(
-            self.model.parameters(),
-            lr=self.cfg.lr,
-            eps=self.cfg.eps,
-            weight_decay=self.cfg.weight_decay,
-        )
-
         t0 = time.time()
-        best_val_loss = 1e9
 
-        for e in range(self.cfg.num_epochs):
-            for i, data in enumerate(self.loaders["train"]):
+        for e in range(self.begin_epoch, self.cfg.num_epochs):
+            for i, data in enumerate(self.loaders["train"], self.begin_iter):
                 self.model.train()
 
                 inputs = data["image"].to(self.cfg.device)
@@ -143,10 +177,10 @@ class Trainer:
                 loss.backward()
                 four = time.time()
                 print("loss backward time: ", four - three)
-                optimizer.step()
+                self.optimizer.step()
                 five = time.time()
                 print("optimizer step time: ", five - four)
-                optimizer.zero_grad()
+                self.optimizer.zero_grad()
 
                 t1 = time.time()
 
@@ -171,16 +205,16 @@ class Trainer:
                                 "val_loss": losses["validation"],
                             }
                         )
-                    if losses["validation"] < best_val_loss:
-                        best_val_loss = losses["validation"]
+                    if losses["validation"] < self.best_val_loss:
+                        self.best_val_loss = losses["validation"]
                         if i > 0:
                             checkpoint = {
                                 "model": self.model.state_dict(),
-                                "optimizer": optimizer.state_dict(),
+                                "optimizer": self.optimizer.state_dict(),
                                 "model_config": self.model_cfg,
                                 "epoch": e,
                                 "iter_num": i,
-                                "best_val_loss": best_val_loss,
+                                "best_val_loss": self.best_val_loss,
                                 "train_config": self.cfg,
                             }
                             logging.info(f"saving checkpoint to {self.cfg.out_dir}")

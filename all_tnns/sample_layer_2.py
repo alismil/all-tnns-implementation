@@ -25,17 +25,18 @@ weights = nn.Parameter(
     )
 )
 
-start = time.time()
-
 x = x.unfold(2, kernel_height, stride_h).unfold(3, kernel_width, stride_w)
 x = x.permute(
     0, 2, 3, 4, 5, 1
 )  # batch_size, num_kernels_h, num_kernels_w, kernel_height, kernel_width, in_channels
+one = time.time()
 x = x.repeat_interleave(repeats=root_channels, dim=1).repeat_interleave(
     repeats=root_channels, dim=2
 )
+two = time.time()
 # batch_size, num_kernels_h*root_channels, num_kernels_w*root_channels, kernel_height, kernel_width, in_channels
 x = weights.mul(x).sum((3, 4, 5))
 
-end = time.time()
-print(end - start)
+three = time.time()
+print(two - one, three - two)
+# 24.620544910430908 74.02892589569092
