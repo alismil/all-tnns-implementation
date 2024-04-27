@@ -26,10 +26,10 @@ class Trainer:
                 self.cfg.checkpoint_to_resume_from, map_location=self.cfg.device
             )
 
-            checkpoint_model_config = checkpoint["model_config"]
-            self.model = AllTnn(checkpoint_model_config, self.cfg.device).to(
-                self.cfg.device
-            )
+            self.model_cfg = checkpoint["model_config"]
+            self.model = AllTnn(self.model_cfg, self.cfg.device).to(self.cfg.device)
+            self.all_alpha = [layer.alpha for layer in self.model_cfg.layers]
+
             state_dict = checkpoint["model"]
             unwanted_prefix = "_orig_mod."
             for k, _ in list(state_dict.items()):
@@ -43,7 +43,6 @@ class Trainer:
                 eps=self.cfg.eps,
                 weight_decay=self.cfg.weight_decay,
             )
-
             self.optimizer.load_state_dict(checkpoint["optimizer"])
 
             self.begin_iter = checkpoint["iter_num"]
