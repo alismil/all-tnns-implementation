@@ -5,7 +5,6 @@ import torch
 from model import AllTnn
 from PIL import Image as I
 from timm.data.transforms_factory import create_transform
-from tqdm import tqdm
 
 
 def get_images(image_paths: List[str]) -> List[I.Image]:
@@ -46,6 +45,7 @@ checkpoint = torch.load(
 )
 
 model_cfg = checkpoint["model_config"]
+model_cfg.dropout_p = 0
 model = AllTnn(model_cfg, device).to(device)
 
 state_dict = checkpoint["model"]
@@ -67,10 +67,6 @@ pil_images = get_images(image_paths)
 inputs = process_input_batch(pil_images)
 
 _, _, _, all_activations = model(inputs)
-# for _ in tqdm(range(99)):
-#     _, _, _, sample_activations = model(inputs)
-#     for i, act in enumerate(sample_activations):
-#         all_activations[i] += act
 
 all_activations = [act.detach().numpy() / 100 for act in all_activations]
 
