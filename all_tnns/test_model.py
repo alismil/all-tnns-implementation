@@ -1,17 +1,17 @@
-import torch
-from model import AllTnn
 from typing import List, Optional
 
+import matplotlib.pyplot as plt
 import torch
-from PIL import Image
+from model import AllTnn
 from PIL import Image as I
 from timm.data.transforms_factory import create_transform
+from tqdm import tqdm
 
 
 def get_images(image_paths: List[str]) -> List[I.Image]:
     out = []
     for path in image_paths:
-        image = Image.open(path)
+        image = I.open(path)
         out.append(image)
     return out
 
@@ -41,7 +41,8 @@ def process_input_batch(
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 checkpoint = torch.load(
-    "checkpoints/epoch_6_iter_494_val_loss_-5.46_2024-05-22_21:30:56.240620_imagenet_100.pt", map_location=device
+    "checkpoints/epoch_6_iter_494_val_loss_-5.46_2024-05-22_21:30:56.240620_imagenet_100.pt",
+    map_location=device,
 )
 
 model_cfg = checkpoint["model_config"]
@@ -56,13 +57,71 @@ model.load_state_dict(state_dict)
 
 
 image_paths = [
-    "td_imgs/horizontal.png",
-    "td_imgs/left_diagonal.png",
-    "td_imgs/right_diagonal.png",
-    "td_imgs/vertical.png",
+    "data/test_images/horizontal.png",
+    "data/test_images/left_diagonal.png",
+    "data/test_images/right_diagonal.png",
+    "data/test_images/vertical.png",
 ]
 
 pil_images = get_images(image_paths)
 inputs = process_input_batch(pil_images)
 
 _, _, _, all_activations = model(inputs)
+# for _ in tqdm(range(99)):
+#     _, _, _, sample_activations = model(inputs)
+#     for i, act in enumerate(sample_activations):
+#         all_activations[i] += act
+
+all_activations = [act.detach().numpy() / 100 for act in all_activations]
+
+num_layers = len(all_activations)
+
+fig, axes = plt.subplots(4, 6, figsize=(5, 5))
+
+for i, activation in enumerate(all_activations):
+    ax = axes.flat[i]
+
+    act_min, act_max = activation.min(), activation.max()
+    norm_activation = (activation - act_min) / (act_max - act_min + 1e-8)
+
+    norm_activation = norm_activation[0, 0, :, :]
+    ax.imshow(norm_activation, cmap="viridis")
+    ax.axis("off")
+    ax.set_title(f"Horizontal, layer {i+1}")
+
+for i, activation in enumerate(all_activations):
+    ax = axes.flat[i + 6]
+
+    act_min, act_max = activation.min(), activation.max()
+    norm_activation = (activation - act_min) / (act_max - act_min + 1e-8)
+
+    norm_activation = norm_activation[1, 0, :, :]
+    ax.imshow(norm_activation, cmap="viridis")
+    ax.axis("off")
+    ax.set_title(f"Left diagonal, layer {i+1}")
+
+for i, activation in enumerate(all_activations):
+    ax = axes.flat[i + 12]
+
+    act_min, act_max = activation.min(), activation.max()
+    norm_activation = (activation - act_min) / (act_max - act_min + 1e-8)
+
+    norm_activation = norm_activation[2, 0, :, :]
+    ax.imshow(norm_activation, cmap="viridis")
+    ax.axis("off")
+    ax.set_title(f"Right diagonal, layer {i+1}")
+
+for i, activation in enumerate(all_activations):
+    ax = axes.flat[i + 18]
+
+    act_min, act_max = activation.min(), activation.max()
+    norm_activation = (activation - act_min) / (act_max - act_min + 1e-8)
+
+    norm_activation = norm_activation[3, 0, :, :]
+    ax.imshow(norm_activation, cmap="viridis")
+    ax.axis("off")
+    ax.set_title(f"Vertical, layer {i+1}")
+
+
+plt.tight_layout()
+plt.show()
