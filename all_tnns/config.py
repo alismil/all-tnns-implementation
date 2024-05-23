@@ -54,10 +54,10 @@ class TrainConfig:
     checkpoint_to_resume_from: str = (
         ""  # the path of the checkoint to resume from if resume_from_checkpoint is True
     )
-    num_epochs: int = 10
-    eval_interval: int = 1  # number of mini batches between evals
-    log_interval: int = 10  # number of mini batches between logs
-    eval_iters: int = 1  # number of mini batches to use for eval
+    num_epochs: int = 7
+    eval_interval: int = 200  # number of mini batches between evals
+    log_interval: int = 30  # number of mini batches between logs
+    eval_iters: int = 50  # number of mini batches to use for eval
 
     train_batch_size: int = 256
     val_batch_size: int = 100
@@ -83,7 +83,7 @@ class TrainConfig:
     weight_decay: float = 1e-6
 
     # wandb logging
-    wandb_log = False
+    wandb_log = True
     wandb_project = "All-TNNs"
     wandb_run_name = str(datetime.now()).replace(" ", "_") + "_imagenet_100"
 

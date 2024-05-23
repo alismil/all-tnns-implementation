@@ -76,6 +76,8 @@ class Trainer:
             keep_in_memory=self.cfg.keep_in_memory,
         )
 
+        self.num_batches = len(dataset["train"]) // self.cfg.train_batch_size
+
         self.loaders = {}
         for split, ds in dataset.items():  # ['train', 'validation']
             self.loaders[split] = DataLoader(
@@ -116,7 +118,7 @@ class Trainer:
                 labels = data["label"].to(self.cfg.device)
 
                 with self.cfg.ctx:
-                    outputs, all_layer_weights, all_layer_dims = self.model(inputs)
+                    outputs, all_layer_weights, all_layer_dims, _ = self.model(inputs)
 
                     loss = all_tnn_loss(
                         outputs,
@@ -160,10 +162,7 @@ class Trainer:
                 inputs = data["image"].to(self.cfg.device)
                 labels = data["label"].to(self.cfg.device)
 
-                one = time.time()
-                outputs, all_layer_weights, all_layer_dims = self.model(inputs)
-                two = time.time()
-                print("forward time: ", two - one)
+                outputs, all_layer_weights, all_layer_dims, _ = self.model(inputs)
                 loss = all_tnn_loss(
                     outputs,
                     labels,
@@ -171,19 +170,13 @@ class Trainer:
                     all_layer_dims,
                     self.all_alpha,
                 )
-                three = time.time()
-                print("loss time: ", three - two)
                 loss.backward()
-                four = time.time()
-                print("loss backward time: ", four - three)
                 self.optimizer.step()
-                five = time.time()
-                print("optimizer step time: ", five - four)
                 self.optimizer.zero_grad()
 
                 t1 = time.time()
 
-                if i % self.cfg.log_interval == 0:
+                if i % self.cfg.log_interval == 0 or i == self.num_batches:
                     if self.cfg.wandb_log:
                         wandb.log({"train_loss": loss})
                     logging.info(
@@ -192,7 +185,7 @@ class Trainer:
 
                 t0 = t1
 
-                if i % self.cfg.eval_interval == 0 and i > 0:
+                if (i % self.cfg.eval_interval == 0 and i > 0) or i == self.num_batches:
                     losses = self.estimate_loss()
                     logging.info(
                         f"epoch {e}, iter {i}: train loss {losses['train']:.4f}, val loss {losses['validation']:.4f}"
@@ -206,7 +199,7 @@ class Trainer:
                         )
                     if losses["validation"] < self.best_val_loss:
                         self.best_val_loss = losses["validation"]
-                        if i > 0:
+                        if e > 2:
                             checkpoint = {
                                 "model": self.model.state_dict(),
                                 "optimizer": self.optimizer.state_dict(),
