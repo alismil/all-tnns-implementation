@@ -54,12 +54,16 @@ def spatial_similarity_loss_single_layer(
     w = w.permute(1, 2, 0)
     # num_kernels_h*root_channels, num_kernels_w*root_channels, in_channels*kernel_height*kernel_width
 
-    horizontal_distances = cos(w[:, :-1, :], w[:, 1:, :])  # cos_dist(w_i,j, w_i,j+1)
-    vertical_distances = cos(w[:-1, :, :], w[1:, :, :])  # cos_dist(w_i,j, w_i+1,j)
+    horizontal_distances = 1 - cos(
+        w[:, :-1, :], w[:, 1:, :]
+    )  # cos_dist(w_i,j, w_i,j+1)
+    vertical_distances = 1 - cos(w[:-1, :, :], w[1:, :, :])  # cos_dist(w_i,j, w_i+1,j)
 
     n = len(weights) * out_channels  # number of activations in the 2D layer
 
     all_distances = torch.sum(horizontal_distances) + torch.sum(vertical_distances)
+
+    print(n, all_distances)
     return (alpha / (2 * n)) * all_distances
 
 
@@ -96,4 +100,4 @@ def all_tnn_loss(
     ce_loss = cross_entropy_loss(output, target)
     spatial_loss = spatial_similarity_loss(all_layer_weights, all_layer_dims, all_alpha)
 
-    return ce_loss - spatial_loss
+    return ce_loss + spatial_loss
