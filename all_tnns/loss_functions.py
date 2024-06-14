@@ -62,8 +62,6 @@ def spatial_similarity_loss_single_layer(
     n = len(weights) * out_channels  # number of activations in the 2D layer
 
     all_distances = torch.sum(horizontal_distances) + torch.sum(vertical_distances)
-
-    print(n, all_distances)
     return (alpha / (2 * n)) * all_distances
 
 
