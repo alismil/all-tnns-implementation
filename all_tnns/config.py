@@ -84,7 +84,7 @@ class TrainConfig:
     weight_decay: float = 1e-6
 
     # wandb logging
-    wandb_log = False
+    wandb_log = True
     wandb_project = "All-TNNs"
     wandb_run_name = str(datetime.now()).replace(" ", "_") + "_imagenet_100"
 
