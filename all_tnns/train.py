@@ -21,6 +21,34 @@ class Trainer:
     def __init__(self, train_config: TrainConfig, model_config: ModelConfig):
         self.cfg = train_config
 
+        os.makedirs(self.cfg.out_dir, exist_ok=True)
+
+        dataset = create_dataset(
+            self.cfg.dataset_path,
+            input_size=self.cfg.input_size,
+            min_scale=self.cfg.min_scale,
+            hflip=self.cfg.hflip,
+            color_jitter=self.cfg.color_jitter,
+            keep_in_memory=self.cfg.keep_in_memory,
+        )
+
+        self.loaders = {}
+        for split, ds in dataset.items():  # ['train', 'validation']
+            self.loaders[split] = DataLoader(
+                ds,
+                batch_size=(
+                    self.cfg.train_batch_size
+                    if split == "train"
+                    else self.cfg.val_batch_size
+                ),
+                sampler=RandomSampler(ds) if self.cfg.shuffle else None,
+                num_workers=self.cfg.num_workers,
+                pin_memory=self.cfg.pin_memory,
+                drop_last=self.cfg.drop_last,
+            )
+
+        self.num_train_batches = len(self.loaders["train"])
+
         if self.cfg.resume_from_checkpoint:
             checkpoint = torch.load(
                 self.cfg.checkpoint_to_resume_from, map_location=self.cfg.device
@@ -65,34 +93,6 @@ class Trainer:
             self.begin_epoch = 0
             self.best_val_loss = 1e9
 
-        os.makedirs(self.cfg.out_dir, exist_ok=True)
-
-        dataset = create_dataset(
-            self.cfg.dataset_path,
-            input_size=self.cfg.input_size,
-            min_scale=self.cfg.min_scale,
-            hflip=self.cfg.hflip,
-            color_jitter=self.cfg.color_jitter,
-            keep_in_memory=self.cfg.keep_in_memory,
-        )
-
-        self.num_batches = len(dataset["train"]) // self.cfg.train_batch_size
-
-        self.loaders = {}
-        for split, ds in dataset.items():  # ['train', 'validation']
-            self.loaders[split] = DataLoader(
-                ds,
-                batch_size=(
-                    self.cfg.train_batch_size
-                    if split == "train"
-                    else self.cfg.val_batch_size
-                ),
-                sampler=RandomSampler(ds) if self.cfg.shuffle else None,
-                num_workers=self.cfg.num_workers,
-                pin_memory=self.cfg.pin_memory,
-                drop_last=self.cfg.drop_last,
-            )
-
     @torch.no_grad()
     def get_flops(
         self, model: torch.nn.Module, loader: DataLoader, device: torch.device
@@ -106,11 +106,12 @@ class Trainer:
     @torch.no_grad()
     def estimate_loss(self):
         """Calculates average loss over eval_iters mini batches from test set"""
-        out = {}
+        out = {"train":{}, "validation":{}}
         self.model.eval()
 
         for split in ["train", "validation"]:
             losses = torch.empty(self.cfg.eval_iters)
+            accuracies = torch.empty(self.cfg.eval_iters)
             for k in range(self.cfg.eval_iters):
                 data = next(iter(self.loaders[split]))
 
@@ -129,7 +130,11 @@ class Trainer:
                     )
 
                 losses[k] = loss.item()
-            out[split] = losses.mean()
+                accuracies[k] = (
+                    torch.sum(outputs.argmax(1) == labels) / outputs.shape[0]
+                )
+            out[split]["loss"] = losses.mean()
+            out[split]["accuracy"] = accuracies.mean()
         self.model.train()
         return out
 
@@ -156,7 +161,7 @@ class Trainer:
         t0 = time.time()
 
         for e in range(self.begin_epoch, self.cfg.num_epochs):
-            for i, data in enumerate(self.loaders["train"], self.begin_iter):
+            for i, data in enumerate(self.loaders["train"]):
                 self.model.train()
 
                 inputs = data["image"].to(self.cfg.device)
@@ -176,7 +181,7 @@ class Trainer:
 
                 t1 = time.time()
 
-                if i % self.cfg.log_interval == 0 or i == self.num_batches:
+                if i % self.cfg.log_interval == 0 or i == self.num_train_batches:
                     if self.cfg.wandb_log:
                         wandb.log({"train_loss": loss})
                     logging.info(
@@ -185,21 +190,23 @@ class Trainer:
 
                 t0 = t1
 
-                if (i % self.cfg.eval_interval == 0 and i > 0) or i == self.num_batches:
+                if (i % self.cfg.eval_interval == 0 and i > 0) or i == self.num_train_batches:
                     losses = self.estimate_loss()
                     logging.info(
-                        f"epoch {e}, iter {i}: train loss {losses['train']:.4f}, val loss {losses['validation']:.4f}"
+                        f"epoch {e}, iter {i}: train loss {losses['train']['loss']:.4f}, val loss {losses['validation']['loss']:.4f}, train accuracy {losses['train']['accuracy']:.4f}, val accuracy {losses['validation']['accuracy']:.4f}"
                     )
                     if self.cfg.wandb_log:
                         wandb.log(
                             {
-                                "train_loss": losses["train"],
-                                "val_loss": losses["validation"],
+                                "train_loss": losses["train"]["loss"],
+                                "val_loss": losses["validation"]["loss"],
+                                "train_accuracy": losses["train"]["accuracy"],
+                                "val_accuracy": losses["validation"]["accuracy"],
                             }
                         )
-                    if losses["validation"] < self.best_val_loss:
-                        self.best_val_loss = losses["validation"]
-                        if e > 2:
+                    if losses["validation"]["loss"] < self.best_val_loss:
+                        self.best_val_loss = losses["validation"]["loss"]
+                        if e > 15:
                             checkpoint = {
                                 "model": self.model.state_dict(),
                                 "optimizer": self.optimizer.state_dict(),
@@ -214,7 +221,7 @@ class Trainer:
                                 checkpoint,
                                 os.path.join(
                                     self.cfg.out_dir,
-                                    f"epoch_{e}_iter_{i}_val_loss_{losses['validation']:.2f}_{self.cfg.wandb_run_name}.pt",
+                                    f"epoch_{e}_iter_{i}_val_loss_{losses['validation']['loss']:.2f}_{self.cfg.wandb_run_name}.pt",
                                 ),
                             )
 

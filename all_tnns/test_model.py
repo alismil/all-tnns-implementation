@@ -5,6 +5,7 @@ import torch
 from model import AllTnn
 from PIL import Image as I
 from timm.data.transforms_factory import create_transform
+from timm.utils.metrics import accuracy
 
 
 def get_images(image_paths: List[str]) -> List[I.Image]:
@@ -40,7 +41,7 @@ def process_input_batch(
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 checkpoint = torch.load(
-    "checkpoints/epoch_6_iter_494_val_loss_-5.46_2024-05-22_21:30:56.240620_imagenet_100.pt",
+    "checkpoints/epoch_16_iter_600_val_loss_-5.87_2024-05-23_21:37:58.314509_imagenet_100_30_epochs.pt",
     map_location=device,
 )
 
@@ -66,7 +67,7 @@ image_paths = [
 pil_images = get_images(image_paths)
 inputs = process_input_batch(pil_images)
 
-_, _, _, all_activations = model(inputs)
+out, _, _, all_activations = model(inputs)
 
 all_activations = [act.detach().numpy() / 100 for act in all_activations]
 
